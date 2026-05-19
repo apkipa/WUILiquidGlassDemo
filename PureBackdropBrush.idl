@@ -1,0 +1,9 @@
+namespace WUILiquidGlassDemo
+{
+    [bindable]
+    [default_interface]
+    runtimeclass PureBackdropBrush : Windows.UI.Xaml.Media.XamlCompositionBrushBase
+    {
+        PureBackdropBrush();
+    };
+}
