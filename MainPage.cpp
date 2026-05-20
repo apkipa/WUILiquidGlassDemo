@@ -28,6 +28,7 @@ namespace {
     };
     constexpr float kOverlayRectWidth = 300.0f;
     constexpr float kOverlayRectHeight = 200.0f;
+    constexpr float kBackdropBlurDownsampleScale = 0.5f;
 
     constexpr char kOverlayVertexShader[] = R"(
 cbuffer OverlayConstants : register(b0)
@@ -69,8 +70,93 @@ VSOutput main(uint vertexId : SV_VertexID)
 }
 )";
 
+    constexpr char kFullscreenVertexShader[] = R"(
+struct VSOutput
+{
+    float4 Position : SV_Position;
+    float2 Uv : TEXCOORD0;
+};
+
+VSOutput main(uint vertexId : SV_VertexID)
+{
+    static const float2 positions[4] =
+    {
+        float2(-1.0f,  1.0f),
+        float2( 1.0f,  1.0f),
+        float2(-1.0f, -1.0f),
+        float2( 1.0f, -1.0f)
+    };
+
+    static const float2 uvs[4] =
+    {
+        float2(0.0f, 0.0f),
+        float2(1.0f, 0.0f),
+        float2(0.0f, 1.0f),
+        float2(1.0f, 1.0f)
+    };
+
+    VSOutput output;
+    output.Position = float4(positions[vertexId], 0.0f, 1.0f);
+    output.Uv = uvs[vertexId];
+    return output;
+}
+)";
+
+    constexpr char kBlurPixelShader[] = R"(
+Texture2D SourceTexture : register(t0);
+SamplerState LinearSampler : register(s0);
+
+cbuffer BlurConstants : register(b0)
+{
+    float2 TextureSize;
+    float2 Direction;
+    float Radius;
+    float3 Padding;
+};
+
+struct VSOutput
+{
+    float4 Position : SV_Position;
+    float2 Uv : TEXCOORD0;
+};
+
+float4 main(VSOutput input) : SV_Target
+{
+    if (Radius <= 0.0f)
+    {
+        return SourceTexture.Sample(LinearSampler, input.Uv);
+    }
+
+    const float sigma = max(Radius, 0.001f);
+    const float twoSigma2 = 2.0f * sigma * sigma;
+    const int maxKernelRadius = 16;
+    const int kernelRadius = min(maxKernelRadius, max(1, (int)ceil(sigma * 3.0f)));
+
+    float4 color = 0.0f.xxxx;
+    float totalWeight = 0.0f;
+
+    [unroll]
+    for (int i = -maxKernelRadius; i <= maxKernelRadius; ++i)
+    {
+        if (abs(i) > kernelRadius)
+        {
+            continue;
+        }
+
+        const float offset = (float)i;
+        const float weight = exp(-(offset * offset) / twoSigma2);
+        const float2 sampleUv = input.Uv + Direction * (offset / TextureSize);
+        color += SourceTexture.Sample(LinearSampler, sampleUv) * weight;
+        totalWeight += weight;
+    }
+
+    return color / max(totalWeight, 1e-5f);
+}
+)";
+
     constexpr char kOverlayPixelShader[] = R"(
 Texture2D FrameTexture : register(t0);
+Texture2D BlurredTexture : register(t1);
 SamplerState FrameSampler : register(s0);
 
 cbuffer OverlayConstants : register(b0)
@@ -94,46 +180,6 @@ float RoundedRectSdf(float2 p, float2 halfSize, float radius)
 {
     float2 q = abs(p) - (halfSize - radius.xx);
     return length(max(q, 0.0f.xx)) + min(max(q.x, q.y), 0.0f) - radius;
-}
-
-float3 SampleBlurred(float2 uv, float2 blurStep)
-{
-    // TODO: Replace this single-pass approximation with a dedicated multi-pass backdrop blur.
-    // The current Poisson-style sampling is only a temporary stand-in and does not match
-    // the stability or look of a real glass material blur pipeline.
-    const float2 offsets[16] =
-    {
-        float2(-0.94201624f, -0.39906216f),
-        float2( 0.94558609f, -0.76890725f),
-        float2(-0.09418410f, -0.92938870f),
-        float2( 0.34495938f,  0.29387760f),
-        float2(-0.91588581f,  0.45771432f),
-        float2(-0.81544232f, -0.87912464f),
-        float2(-0.38277543f,  0.27676845f),
-        float2( 0.97484398f,  0.75648379f),
-        float2( 0.44323325f, -0.97511554f),
-        float2( 0.53742981f, -0.47373420f),
-        float2(-0.26496911f, -0.41893023f),
-        float2( 0.79197514f,  0.19090188f),
-        float2(-0.24188840f,  0.99706507f),
-        float2(-0.81409955f,  0.91437590f),
-        float2( 0.19984126f,  0.78641367f),
-        float2( 0.14383161f, -0.14100790f)
-    };
-
-    float3 sum = FrameTexture.Sample(FrameSampler, uv).rgb * 0.18f;
-    float totalWeight = 0.18f;
-
-    [unroll]
-    for (int i = 0; i < 16; ++i)
-    {
-        float distance2 = dot(offsets[i], offsets[i]);
-        float weight = exp(-distance2 * 1.8f);
-        sum += FrameTexture.Sample(FrameSampler, uv + blurStep * offsets[i]).rgb * weight;
-        totalWeight += weight;
-    }
-
-    return sum / totalWeight;
 }
 
 float4 main(VSOutput input) : SV_Target
@@ -163,11 +209,19 @@ float4 main(VSOutput input) : SV_Target
         RoundedRectSdf(local - float2(eps, 0.0f), halfRect, radius);
     const float gradY = RoundedRectSdf(local + float2(0.0f, eps), halfRect, radius) -
         RoundedRectSdf(local - float2(0.0f, eps), halfRect, radius);
-    const float2 edgeNormal = normalize(float2(gradX, gradY) + 1e-5f.xx);
-    const float2 refractNormal = normalize(local / max(halfRect, 1.0f.xx) + 1e-5f.xx);
-
     const float innerDistance = max(-sdf, 0.0f);
     const float halfMinSize = max(min(halfRect.x, halfRect.y), 1.0f);
+    const float2 normalizedLocal = local / max(halfRect, 1.0f.xx);
+    const float roundness = saturate(radius / halfMinSize);
+    const float shapeExponent = lerp(32.0f, 2.0f, roundness);
+    const float2 absNormalizedLocal = abs(normalizedLocal);
+    const float shapeMetric = pow(
+        pow(absNormalizedLocal.x, shapeExponent) +
+        pow(absNormalizedLocal.y, shapeExponent),
+        1.0f / shapeExponent);
+    const float normalizedShapeMetric = saturate(shapeMetric);
+    const float roundedInteriorDistance = (1.0f - normalizedShapeMetric) * halfMinSize;
+    const float2 refractNormal = normalize(local / max(halfRect, 1.0f.xx) + 1e-5f.xx);
     const float2 domeCoord = local / max(halfRect, 1.0f.xx);
     const float edgeFactor = 1.0f - saturate(innerDistance / max(radius, 1.0f));
     const float interiorFactor = saturate(innerDistance / halfMinSize);
@@ -175,7 +229,10 @@ float4 main(VSOutput input) : SV_Target
     const float rimDistance = max(borderThickness * 2.0f + 1.0f, 1.0f);
     const float edgeIntensity = exp(-innerDistance / edgeDistance) * 0.85f;
     const float rimIntensity = exp(-innerDistance / rimDistance) * 0.25f;
-    const float centerFade = 1.0f - smoothstep(radius * 0.9f, max(halfMinSize * 0.55f, radius * 0.9f + 1.0f), innerDistance);
+    const float centerFade = 1.0f - smoothstep(
+        radius * 0.9f,
+        max(halfMinSize * 0.55f, radius * 0.9f + 1.0f),
+        roundedInteriorDistance);
     const float refractionWeight = (edgeIntensity + rimIntensity) * centerFade;
     const float dispersionWeight = edgeIntensity * centerFade;
 
@@ -183,7 +240,6 @@ float4 main(VSOutput input) : SV_Target
     const float2 baseUv = samplePixel / SurfaceSize * FrameContentScale;
     const float2 texelSize = 1.0f.xx / FrameTextureSize;
     const float2 refractUv = baseUv - refractNormal * texelSize * refractionStrength * refractionWeight;
-    const float2 blurStep = texelSize * blurRadius * 0.85f;
     const float2 dispersionOffset = refractNormal * texelSize * dispersionStrength * dispersionWeight;
 
     const float3 sharp = float3(
@@ -191,12 +247,11 @@ float4 main(VSOutput input) : SV_Target
         FrameTexture.Sample(FrameSampler, refractUv).g,
         FrameTexture.Sample(FrameSampler, refractUv + dispersionOffset).b);
     const float3 blurred = float3(
-        SampleBlurred(refractUv - dispersionOffset, blurStep).r,
-        SampleBlurred(refractUv, blurStep).g,
-        SampleBlurred(refractUv + dispersionOffset, blurStep).b);
+        BlurredTexture.Sample(FrameSampler, refractUv - dispersionOffset).r,
+        BlurredTexture.Sample(FrameSampler, refractUv).g,
+        BlurredTexture.Sample(FrameSampler, refractUv + dispersionOffset).b);
 
-    float blurMix = saturate(0.30f + blurRadius / 20.0f + edgeFactor * 0.35f);
-    float3 color = lerp(sharp, blurred, blurMix);
+    float3 color = blurRadius > 0.0f ? blurred : sharp;
     color = lerp(color, 1.0f.xxx, 0.08f + interiorFactor * 0.06f);
 
     const float borderMask = 1.0f - smoothstep(borderThickness, borderThickness + feather, innerDistance);
@@ -360,6 +415,14 @@ float4 main(VSOutput input) : SV_Target
         wfn::float2 Padding{};
         wfn::float4 MaterialParams0{};
         wfn::float4 MaterialParams1{};
+    };
+
+    struct BlurConstants final
+    {
+        wfn::float2 TextureSize{};
+        wfn::float2 Direction{};
+        float Radius{};
+        float Padding[3]{};
     };
 
     winrt::com_ptr<ID3DBlob> CompileShader(char const* source, char const* target)
@@ -737,10 +800,21 @@ namespace winrt::WUILiquidGlassDemo::implementation {
             m_d3dDevice = nullptr;
             m_d2dDevice = nullptr;
             m_vertexShader = nullptr;
+            m_fullscreenVertexShader = nullptr;
             m_pixelShader = nullptr;
+            m_blurPixelShader = nullptr;
             m_constantBuffer = nullptr;
+            m_blurConstantBuffer = nullptr;
             m_rasterizerState = nullptr;
             m_samplerState = nullptr;
+            m_blurTextureFormat = DXGI_FORMAT_UNKNOWN;
+            m_blurTextureSize = {};
+            m_blurTextureA = nullptr;
+            m_blurTextureB = nullptr;
+            m_blurRenderTargetViewA = nullptr;
+            m_blurRenderTargetViewB = nullptr;
+            m_blurShaderResourceViewA = nullptr;
+            m_blurShaderResourceViewB = nullptr;
             m_isOverlayInitialized = false;
         }
         catch (...)
@@ -760,14 +834,26 @@ namespace winrt::WUILiquidGlassDemo::implementation {
         m_d2dDevice = CreateD2DDevice(dxgiDevice);
         m_winrtD3DDevice = WrapDxgiDevice(dxgiDevice);
 
+        auto fullscreenVertexShaderBlob = CompileShader(kFullscreenVertexShader, "vs_5_0");
         auto vertexShaderBlob = CompileShader(kOverlayVertexShader, "vs_5_0");
+        auto blurPixelShaderBlob = CompileShader(kBlurPixelShader, "ps_5_0");
         auto pixelShaderBlob = CompileShader(kOverlayPixelShader, "ps_5_0");
 
+        check_hresult(m_d3dDevice->CreateVertexShader(
+            fullscreenVertexShaderBlob->GetBufferPointer(),
+            fullscreenVertexShaderBlob->GetBufferSize(),
+            nullptr,
+            m_fullscreenVertexShader.put()));
         check_hresult(m_d3dDevice->CreateVertexShader(
             vertexShaderBlob->GetBufferPointer(),
             vertexShaderBlob->GetBufferSize(),
             nullptr,
             m_vertexShader.put()));
+        check_hresult(m_d3dDevice->CreatePixelShader(
+            blurPixelShaderBlob->GetBufferPointer(),
+            blurPixelShaderBlob->GetBufferSize(),
+            nullptr,
+            m_blurPixelShader.put()));
         check_hresult(m_d3dDevice->CreatePixelShader(
             pixelShaderBlob->GetBufferPointer(),
             pixelShaderBlob->GetBufferSize(),
@@ -779,6 +865,12 @@ namespace winrt::WUILiquidGlassDemo::implementation {
         constantBufferDesc.Usage = D3D11_USAGE_DEFAULT;
         constantBufferDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
         check_hresult(m_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, m_constantBuffer.put()));
+
+        D3D11_BUFFER_DESC blurConstantBufferDesc{};
+        blurConstantBufferDesc.ByteWidth = sizeof(BlurConstants);
+        blurConstantBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+        blurConstantBufferDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        check_hresult(m_d3dDevice->CreateBuffer(&blurConstantBufferDesc, nullptr, m_blurConstantBuffer.put()));
 
         D3D11_RASTERIZER_DESC rasterizerDesc{};
         rasterizerDesc.FillMode = D3D11_FILL_SOLID;
@@ -851,6 +943,48 @@ namespace winrt::WUILiquidGlassDemo::implementation {
         ScheduleOverlayRender();
     }
 
+    void MainPage::EnsureBlurResources(DXGI_FORMAT format, uint32_t width, uint32_t height)
+    {
+        auto const blurWidth = std::max(1u, static_cast<uint32_t>(std::lround(width * kBackdropBlurDownsampleScale)));
+        auto const blurHeight = std::max(1u, static_cast<uint32_t>(std::lround(height * kBackdropBlurDownsampleScale)));
+
+        if (m_blurShaderResourceViewA &&
+            m_blurShaderResourceViewB &&
+            m_blurTextureFormat == format &&
+            m_blurTextureSize.Width == static_cast<int32_t>(blurWidth) &&
+            m_blurTextureSize.Height == static_cast<int32_t>(blurHeight))
+        {
+            return;
+        }
+
+        m_blurTextureA = nullptr;
+        m_blurTextureB = nullptr;
+        m_blurRenderTargetViewA = nullptr;
+        m_blurRenderTargetViewB = nullptr;
+        m_blurShaderResourceViewA = nullptr;
+        m_blurShaderResourceViewB = nullptr;
+
+        D3D11_TEXTURE2D_DESC textureDesc{};
+        textureDesc.Width = blurWidth;
+        textureDesc.Height = blurHeight;
+        textureDesc.MipLevels = 1;
+        textureDesc.ArraySize = 1;
+        textureDesc.Format = format;
+        textureDesc.SampleDesc.Count = 1;
+        textureDesc.Usage = D3D11_USAGE_DEFAULT;
+        textureDesc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+
+        check_hresult(m_d3dDevice->CreateTexture2D(&textureDesc, nullptr, m_blurTextureA.put()));
+        check_hresult(m_d3dDevice->CreateTexture2D(&textureDesc, nullptr, m_blurTextureB.put()));
+        check_hresult(m_d3dDevice->CreateRenderTargetView(m_blurTextureA.get(), nullptr, m_blurRenderTargetViewA.put()));
+        check_hresult(m_d3dDevice->CreateRenderTargetView(m_blurTextureB.get(), nullptr, m_blurRenderTargetViewB.put()));
+        check_hresult(m_d3dDevice->CreateShaderResourceView(m_blurTextureA.get(), nullptr, m_blurShaderResourceViewA.put()));
+        check_hresult(m_d3dDevice->CreateShaderResourceView(m_blurTextureB.get(), nullptr, m_blurShaderResourceViewB.put()));
+
+        m_blurTextureFormat = format;
+        m_blurTextureSize = { static_cast<int32_t>(blurWidth), static_cast<int32_t>(blurHeight) };
+    }
+
     void MainPage::EnsureBackdropCaptureSource()
     {
         if (m_backdropCaptureVisual)
@@ -879,6 +1013,58 @@ namespace winrt::WUILiquidGlassDemo::implementation {
         m_backdropCaptureSurface.SourceOffset({ 0.0f, 0.0f });
         m_backdropCaptureSurface.SourceSize(size);
         m_backdropCaptureVisual.Size(size);
+    }
+
+    void MainPage::RunBackdropBlur(ID3D11ShaderResourceView* sourceShaderResourceView, float blurRadius)
+    {
+        if (!sourceShaderResourceView || blurRadius <= 0.0f)
+        {
+            return;
+        }
+
+        auto runPass = [&](ID3D11RenderTargetView* renderTargetView, ID3D11ShaderResourceView* shaderResourceView, wfn::float2 direction)
+            {
+                BlurConstants constants{};
+                constants.TextureSize = {
+                    static_cast<float>(m_blurTextureSize.Width),
+                    static_cast<float>(m_blurTextureSize.Height)
+                };
+                constants.Direction = direction;
+                constants.Radius = blurRadius;
+
+                D3D11_VIEWPORT viewport{};
+                viewport.Width = static_cast<float>(m_blurTextureSize.Width);
+                viewport.Height = static_cast<float>(m_blurTextureSize.Height);
+                viewport.MinDepth = 0.0f;
+                viewport.MaxDepth = 1.0f;
+
+                ID3D11RenderTargetView* const renderTargets[] = { renderTargetView };
+                ID3D11Buffer* const constantBuffers[] = { m_blurConstantBuffer.get() };
+                ID3D11ShaderResourceView* const shaderResources[] = { shaderResourceView };
+                ID3D11SamplerState* const samplers[] = { m_samplerState.get() };
+                ID3D11ShaderResourceView* const nullShaderResources[] = { nullptr };
+                ID3D11Buffer* nullVertexBuffer = nullptr;
+                UINT stride = 0;
+                UINT offset = 0;
+
+                m_d3dContext->OMSetRenderTargets(1, renderTargets, nullptr);
+                m_d3dContext->RSSetViewports(1, &viewport);
+                m_d3dContext->RSSetState(m_rasterizerState.get());
+                m_d3dContext->IASetInputLayout(nullptr);
+                m_d3dContext->IASetVertexBuffers(0, 1, &nullVertexBuffer, &stride, &offset);
+                m_d3dContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+                m_d3dContext->UpdateSubresource(m_blurConstantBuffer.get(), 0, nullptr, &constants, 0, 0);
+                m_d3dContext->VSSetShader(m_fullscreenVertexShader.get(), nullptr, 0);
+                m_d3dContext->PSSetShader(m_blurPixelShader.get(), nullptr, 0);
+                m_d3dContext->PSSetConstantBuffers(0, 1, constantBuffers);
+                m_d3dContext->PSSetShaderResources(0, 1, shaderResources);
+                m_d3dContext->PSSetSamplers(0, 1, samplers);
+                m_d3dContext->Draw(4, 0);
+                m_d3dContext->PSSetShaderResources(0, 1, nullShaderResources);
+            };
+
+        runPass(m_blurRenderTargetViewA.get(), sourceShaderResourceView, { 1.0f, 0.0f });
+        runPass(m_blurRenderTargetViewB.get(), m_blurShaderResourceViewA.get(), { 0.0f, 1.0f });
     }
 
     void MainPage::UpdateSliderRanges()
@@ -992,6 +1178,18 @@ namespace winrt::WUILiquidGlassDemo::implementation {
             nullptr,
             frameShaderResourceView.put()));
 
+        auto const blurRadius = static_cast<float>(BlurRadiusSlider().Value()) * scale;
+        ID3D11ShaderResourceView* blurredShaderResourceView = frameShaderResourceView.get();
+        if (blurRadius > 0.0f)
+        {
+            EnsureBlurResources(
+                frameTextureDesc.Format,
+                frameTextureDesc.Width,
+                frameTextureDesc.Height);
+            RunBackdropBlur(frameShaderResourceView.get(), blurRadius);
+            blurredShaderResourceView = m_blurShaderResourceViewB.get();
+        }
+
         auto const rectWidth = kOverlayRectWidth * scale;
         auto const rectHeight = kOverlayRectHeight * scale;
         auto const rectX = std::clamp(
@@ -1016,7 +1214,7 @@ namespace winrt::WUILiquidGlassDemo::implementation {
             static_cast<float>(frameTextureDesc.Height)
         };
         constants.MaterialParams0 = {
-            static_cast<float>(BlurRadiusSlider().Value()) * scale,
+            blurRadius,
             std::max(0.0f, static_cast<float>(BorderThicknessSlider().Value()) * scale),
             std::max(0.0f, static_cast<float>(CornerRadiusSlider().Value()) * scale),
             static_cast<float>(RefractionStrengthSlider().Value()) * scale
@@ -1038,9 +1236,12 @@ namespace winrt::WUILiquidGlassDemo::implementation {
 
         ID3D11RenderTargetView* const renderTargets[] = { renderTargetView.get() };
         ID3D11Buffer* const constantBuffers[] = { m_constantBuffer.get() };
-        ID3D11ShaderResourceView* const shaderResources[] = { frameShaderResourceView.get() };
+        ID3D11ShaderResourceView* const shaderResources[] = {
+            frameShaderResourceView.get(),
+            blurredShaderResourceView
+        };
         ID3D11SamplerState* const samplers[] = { m_samplerState.get() };
-        ID3D11ShaderResourceView* const nullShaderResources[] = { nullptr };
+        ID3D11ShaderResourceView* const nullShaderResources[] = { nullptr, nullptr };
         ID3D11Buffer* nullVertexBuffer = nullptr;
         UINT stride = 0;
         UINT offset = 0;
@@ -1058,10 +1259,10 @@ namespace winrt::WUILiquidGlassDemo::implementation {
         m_d3dContext->VSSetConstantBuffers(0, 1, constantBuffers);
         m_d3dContext->PSSetShader(m_pixelShader.get(), nullptr, 0);
         m_d3dContext->PSSetConstantBuffers(0, 1, constantBuffers);
-        m_d3dContext->PSSetShaderResources(0, 1, shaderResources);
+        m_d3dContext->PSSetShaderResources(0, 2, shaderResources);
         m_d3dContext->PSSetSamplers(0, 1, samplers);
         m_d3dContext->Draw(4, 0);
-        m_d3dContext->PSSetShaderResources(0, 1, nullShaderResources);
+        m_d3dContext->PSSetShaderResources(0, 2, nullShaderResources);
     }
 
     float MainPage::GetOverlayRasterizationScale()

@@ -49,8 +49,10 @@ namespace winrt::WUILiquidGlassDemo::implementation
         void EnsureBackdropCaptureSource();
         void UpdateBackdropCaptureSourceSize();
         void UpdateOverlaySurfaceSize();
+        void EnsureBlurResources(DXGI_FORMAT format, uint32_t width, uint32_t height);
         void UpdateSliderRanges();
         void ScheduleOverlayRender();
+        void RunBackdropBlur(ID3D11ShaderResourceView* sourceShaderResourceView, float blurRadius);
         void RenderOverlaySurface();
         float GetOverlayRasterizationScale();
 
@@ -74,10 +76,21 @@ namespace winrt::WUILiquidGlassDemo::implementation
         winrt::com_ptr<ID3D11DeviceContext4> m_d3dContext;
         winrt::com_ptr<ID2D1Device1> m_d2dDevice;
         winrt::com_ptr<ID3D11VertexShader> m_vertexShader;
+        winrt::com_ptr<ID3D11VertexShader> m_fullscreenVertexShader;
         winrt::com_ptr<ID3D11PixelShader> m_pixelShader;
+        winrt::com_ptr<ID3D11PixelShader> m_blurPixelShader;
         winrt::com_ptr<ID3D11Buffer> m_constantBuffer;
+        winrt::com_ptr<ID3D11Buffer> m_blurConstantBuffer;
         winrt::com_ptr<ID3D11RasterizerState> m_rasterizerState;
         winrt::com_ptr<ID3D11SamplerState> m_samplerState;
+        DXGI_FORMAT m_blurTextureFormat{ DXGI_FORMAT_UNKNOWN };
+        Windows::Graphics::SizeInt32 m_blurTextureSize{};
+        winrt::com_ptr<ID3D11Texture2D> m_blurTextureA;
+        winrt::com_ptr<ID3D11Texture2D> m_blurTextureB;
+        winrt::com_ptr<ID3D11RenderTargetView> m_blurRenderTargetViewA;
+        winrt::com_ptr<ID3D11RenderTargetView> m_blurRenderTargetViewB;
+        winrt::com_ptr<ID3D11ShaderResourceView> m_blurShaderResourceViewA;
+        winrt::com_ptr<ID3D11ShaderResourceView> m_blurShaderResourceViewB;
     };
 }
 
