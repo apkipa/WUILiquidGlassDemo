@@ -37,9 +37,8 @@ cbuffer OverlayConstants : register(b0)
     float2 RectSize;
     float2 FrameContentScale;
     float2 FrameTextureSize;
-    float BlurRadius;
-    float BorderThickness;
-    float4 Reserved;
+    float4 MaterialParams0;
+    float4 MaterialParams1;
 };
 
 struct VSOutput
@@ -81,9 +80,8 @@ cbuffer OverlayConstants : register(b0)
     float2 RectSize;
     float2 FrameContentScale;
     float2 FrameTextureSize;
-    float BlurRadius;
-    float BorderThickness;
-    float4 Reserved;
+    float4 MaterialParams0;
+    float4 MaterialParams1;
 };
 
 struct VSOutput
@@ -92,31 +90,128 @@ struct VSOutput
     float2 LocalPosition : TEXCOORD0;
 };
 
-float4 main(VSOutput input) : SV_Target
+float RoundedRectSdf(float2 p, float2 halfSize, float radius)
 {
-    const float2 samplePixel = RectOrigin + input.LocalPosition + 0.5f.xx;
-    const float2 sourceUv = samplePixel / SurfaceSize * FrameContentScale;
-    const float2 texelSize = 1.0f.xx / FrameTextureSize;
-    const float2 blurStep = texelSize * BlurRadius;
+    float2 q = abs(p) - (halfSize - radius.xx);
+    return length(max(q, 0.0f.xx)) + min(max(q.x, q.y), 0.0f) - radius;
+}
 
-    float3 blurred =
-        FrameTexture.Sample(FrameSampler, sourceUv + blurStep * float2(-1.0f, -1.0f)).rgb * 0.0625f +
-        FrameTexture.Sample(FrameSampler, sourceUv + blurStep * float2( 0.0f, -1.0f)).rgb * 0.1250f +
-        FrameTexture.Sample(FrameSampler, sourceUv + blurStep * float2( 1.0f, -1.0f)).rgb * 0.0625f +
-        FrameTexture.Sample(FrameSampler, sourceUv + blurStep * float2(-1.0f,  0.0f)).rgb * 0.1250f +
-        FrameTexture.Sample(FrameSampler, sourceUv).rgb                                     * 0.2500f +
-        FrameTexture.Sample(FrameSampler, sourceUv + blurStep * float2( 1.0f,  0.0f)).rgb * 0.1250f +
-        FrameTexture.Sample(FrameSampler, sourceUv + blurStep * float2(-1.0f,  1.0f)).rgb * 0.0625f +
-        FrameTexture.Sample(FrameSampler, sourceUv + blurStep * float2( 0.0f,  1.0f)).rgb * 0.1250f +
-        FrameTexture.Sample(FrameSampler, sourceUv + blurStep * float2( 1.0f,  1.0f)).rgb * 0.0625f;
-
-    const float2 edgeDistance = min(input.LocalPosition, RectSize - input.LocalPosition);
-    if (min(edgeDistance.x, edgeDistance.y) <= BorderThickness)
+float3 SampleBlurred(float2 uv, float2 blurStep)
+{
+    // TODO: Replace this single-pass approximation with a dedicated multi-pass backdrop blur.
+    // The current Poisson-style sampling is only a temporary stand-in and does not match
+    // the stability or look of a real glass material blur pipeline.
+    const float2 offsets[16] =
     {
-        return float4(1.0f, 0.0f, 0.0f, 1.0f);
+        float2(-0.94201624f, -0.39906216f),
+        float2( 0.94558609f, -0.76890725f),
+        float2(-0.09418410f, -0.92938870f),
+        float2( 0.34495938f,  0.29387760f),
+        float2(-0.91588581f,  0.45771432f),
+        float2(-0.81544232f, -0.87912464f),
+        float2(-0.38277543f,  0.27676845f),
+        float2( 0.97484398f,  0.75648379f),
+        float2( 0.44323325f, -0.97511554f),
+        float2( 0.53742981f, -0.47373420f),
+        float2(-0.26496911f, -0.41893023f),
+        float2( 0.79197514f,  0.19090188f),
+        float2(-0.24188840f,  0.99706507f),
+        float2(-0.81409955f,  0.91437590f),
+        float2( 0.19984126f,  0.78641367f),
+        float2( 0.14383161f, -0.14100790f)
+    };
+
+    float3 sum = FrameTexture.Sample(FrameSampler, uv).rgb * 0.18f;
+    float totalWeight = 0.18f;
+
+    [unroll]
+    for (int i = 0; i < 16; ++i)
+    {
+        float distance2 = dot(offsets[i], offsets[i]);
+        float weight = exp(-distance2 * 1.8f);
+        sum += FrameTexture.Sample(FrameSampler, uv + blurStep * offsets[i]).rgb * weight;
+        totalWeight += weight;
     }
 
-    return float4(blurred, 1.0f);
+    return sum / totalWeight;
+}
+
+float4 main(VSOutput input) : SV_Target
+{
+    const float blurRadius = MaterialParams0.x;
+    const float borderThickness = MaterialParams0.y;
+    const float cornerRadius = MaterialParams0.z;
+    const float refractionStrength = MaterialParams0.w;
+    const float highlightStrength = MaterialParams1.x;
+    const float edgeSoftness = MaterialParams1.y;
+    const float dispersionStrength = MaterialParams1.z;
+
+    const float2 halfRect = RectSize * 0.5f;
+    const float2 local = input.LocalPosition - halfRect;
+    const float clampedCornerRadius = min(cornerRadius, min(halfRect.x, halfRect.y) - 1.0f);
+    const float radius = max(clampedCornerRadius, 0.0f);
+    const float sdf = RoundedRectSdf(local, halfRect, radius);
+    const float feather = max(edgeSoftness, 1.0f);
+    const float alpha = saturate((feather - sdf) / feather);
+    if (alpha <= 0.0f)
+    {
+        return 0.0f.xxxx;
+    }
+
+    const float eps = 1.0f;
+    const float gradX = RoundedRectSdf(local + float2(eps, 0.0f), halfRect, radius) -
+        RoundedRectSdf(local - float2(eps, 0.0f), halfRect, radius);
+    const float gradY = RoundedRectSdf(local + float2(0.0f, eps), halfRect, radius) -
+        RoundedRectSdf(local - float2(0.0f, eps), halfRect, radius);
+    const float2 edgeNormal = normalize(float2(gradX, gradY) + 1e-5f.xx);
+    const float2 refractNormal = normalize(local / max(halfRect, 1.0f.xx) + 1e-5f.xx);
+
+    const float innerDistance = max(-sdf, 0.0f);
+    const float halfMinSize = max(min(halfRect.x, halfRect.y), 1.0f);
+    const float2 domeCoord = local / max(halfRect, 1.0f.xx);
+    const float edgeFactor = 1.0f - saturate(innerDistance / max(radius, 1.0f));
+    const float interiorFactor = saturate(innerDistance / halfMinSize);
+    const float edgeDistance = max(radius * 0.2f + borderThickness * 4.0f, 1.0f);
+    const float rimDistance = max(borderThickness * 2.0f + 1.0f, 1.0f);
+    const float edgeIntensity = exp(-innerDistance / edgeDistance) * 0.85f;
+    const float rimIntensity = exp(-innerDistance / rimDistance) * 0.25f;
+    const float centerFade = 1.0f - smoothstep(radius * 0.9f, max(halfMinSize * 0.55f, radius * 0.9f + 1.0f), innerDistance);
+    const float refractionWeight = (edgeIntensity + rimIntensity) * centerFade;
+    const float dispersionWeight = edgeIntensity * centerFade;
+
+    const float2 samplePixel = RectOrigin + input.LocalPosition + 0.5f.xx;
+    const float2 baseUv = samplePixel / SurfaceSize * FrameContentScale;
+    const float2 texelSize = 1.0f.xx / FrameTextureSize;
+    const float2 refractUv = baseUv - refractNormal * texelSize * refractionStrength * refractionWeight;
+    const float2 blurStep = texelSize * blurRadius * 0.85f;
+    const float2 dispersionOffset = refractNormal * texelSize * dispersionStrength * dispersionWeight;
+
+    const float3 sharp = float3(
+        FrameTexture.Sample(FrameSampler, refractUv - dispersionOffset).r,
+        FrameTexture.Sample(FrameSampler, refractUv).g,
+        FrameTexture.Sample(FrameSampler, refractUv + dispersionOffset).b);
+    const float3 blurred = float3(
+        SampleBlurred(refractUv - dispersionOffset, blurStep).r,
+        SampleBlurred(refractUv, blurStep).g,
+        SampleBlurred(refractUv + dispersionOffset, blurStep).b);
+
+    float blurMix = saturate(0.30f + blurRadius / 20.0f + edgeFactor * 0.35f);
+    float3 color = lerp(sharp, blurred, blurMix);
+    color = lerp(color, 1.0f.xxx, 0.08f + interiorFactor * 0.06f);
+
+    const float borderMask = 1.0f - smoothstep(borderThickness, borderThickness + feather, innerDistance);
+    const float innerGlow = 1.0f - smoothstep(borderThickness * 2.0f, borderThickness * 6.0f + feather, innerDistance);
+    const float domeHeight = sqrt(saturate(1.0f - dot(domeCoord, domeCoord)));
+    const float3 surfaceNormal = normalize(float3(-domeCoord * 0.35f, 0.45f + domeHeight * 0.75f));
+    const float3 lightDir = normalize(float3(-0.35f, -0.45f, 0.82f));
+    const float specular = pow(saturate(dot(surfaceNormal, lightDir)), 18.0f) * (0.20f + edgeFactor * 0.50f);
+    const float topSweep = pow(saturate(1.0f - input.LocalPosition.y / RectSize.y), 2.5f) * (0.15f + edgeFactor * 0.20f);
+
+    color += (specular * 0.28f + topSweep * 0.12f + innerGlow * 0.10f) * highlightStrength;
+    color = lerp(color, 1.0f.xxx, borderMask * 0.22f * highlightStrength);
+    color = saturate(color);
+
+    return float4(color * alpha, alpha);
 }
 )";
 
@@ -262,9 +357,9 @@ float4 main(VSOutput input) : SV_Target
         wfn::float2 RectSize{};
         wfn::float2 FrameContentScale{};
         wfn::float2 FrameTextureSize{};
-        float BlurRadius{};
-        float BorderThickness{};
-        wfn::float4 Reserved{};
+        wfn::float2 Padding{};
+        wfn::float4 MaterialParams0{};
+        wfn::float4 MaterialParams1{};
     };
 
     winrt::com_ptr<ID3DBlob> CompileShader(char const* source, char const* target)
@@ -920,8 +1015,18 @@ namespace winrt::WUILiquidGlassDemo::implementation {
             static_cast<float>(frameTextureDesc.Width),
             static_cast<float>(frameTextureDesc.Height)
         };
-        constants.BlurRadius = 2.0f;
-        constants.BorderThickness = scale;
+        constants.MaterialParams0 = {
+            static_cast<float>(BlurRadiusSlider().Value()) * scale,
+            std::max(0.0f, static_cast<float>(BorderThicknessSlider().Value()) * scale),
+            std::max(0.0f, static_cast<float>(CornerRadiusSlider().Value()) * scale),
+            static_cast<float>(RefractionStrengthSlider().Value()) * scale
+        };
+        constants.MaterialParams1 = {
+            static_cast<float>(HighlightStrengthSlider().Value()),
+            scale,
+            static_cast<float>(DispersionStrengthSlider().Value()) * scale,
+            0.0f
+        };
 
         D3D11_VIEWPORT viewport{};
         viewport.TopLeftX = static_cast<float>(updateOffset.x);

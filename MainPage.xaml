@@ -51,6 +51,68 @@
             IsHitTestVisible="False"
             SizeChanged="RenderSurfaceHostSizeChanged" />
         <Grid x:Name="OverlayControlsHost" Grid.Row="1">
+            <StackPanel
+                Margin="16"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Spacing="6"
+                Width="220">
+                <TextBlock Text="Glass" FontSize="16" FontWeight="SemiBold" />
+                <TextBlock Text="Blur radius" />
+                <Slider
+                    x:Name="BlurRadiusSlider"
+                    Maximum="16"
+                    Minimum="0"
+                    SmallChange="0.25"
+                    StepFrequency="0.25"
+                    Value="3"
+                    ValueChanged="OverlaySliderValueChanged" />
+                <TextBlock Text="Refraction" />
+                <Slider
+                    x:Name="RefractionStrengthSlider"
+                    Maximum="24"
+                    Minimum="0"
+                    SmallChange="0.25"
+                    StepFrequency="0.25"
+                    Value="8"
+                    ValueChanged="OverlaySliderValueChanged" />
+                <TextBlock Text="Corner radius" />
+                <Slider
+                    x:Name="CornerRadiusSlider"
+                    Maximum="96"
+                    Minimum="0"
+                    SmallChange="1"
+                    StepFrequency="1"
+                    Value="36"
+                    ValueChanged="OverlaySliderValueChanged" />
+                <TextBlock Text="Border thickness" />
+                <Slider
+                    x:Name="BorderThicknessSlider"
+                    Maximum="8"
+                    Minimum="0"
+                    SmallChange="0.25"
+                    StepFrequency="0.25"
+                    Value="1.5"
+                    ValueChanged="OverlaySliderValueChanged" />
+                <TextBlock Text="Highlight strength" />
+                <Slider
+                    x:Name="HighlightStrengthSlider"
+                    Maximum="2"
+                    Minimum="0"
+                    SmallChange="0.05"
+                    StepFrequency="0.05"
+                    Value="0.85"
+                    ValueChanged="OverlaySliderValueChanged" />
+                <TextBlock Text="Dispersion" />
+                <Slider
+                    x:Name="DispersionStrengthSlider"
+                    Maximum="8"
+                    Minimum="0"
+                    SmallChange="0.1"
+                    StepFrequency="0.1"
+                    Value="0.8"
+                    ValueChanged="OverlaySliderValueChanged" />
+            </StackPanel>
             <Slider
                 x:Name="YOffsetSlider"
                 Width="32"
