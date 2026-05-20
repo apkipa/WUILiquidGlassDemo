@@ -1,7 +1,5 @@
 #pragma once
 
-#include <winrt/Windows.Foundation.h>
-
 #include "AnimationFrameScheduler.g.h"
 
 namespace winrt::WUILiquidGlassDemo::implementation

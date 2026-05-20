@@ -1,6 +1,5 @@
 #include "pch.h"
 
-#include <winrt/Tenkai.h>
 #include "App.h"
 
 using namespace winrt;

@@ -4,13 +4,6 @@
 #include "AnimationFrameScheduler.g.cpp"
 #endif
 
-#include <Tenkai.hpp>
-
-#include <algorithm>
-#include <chrono>
-#include <utility>
-#include <vector>
-
 using namespace winrt;
 
 namespace winrt::WUILiquidGlassDemo::implementation

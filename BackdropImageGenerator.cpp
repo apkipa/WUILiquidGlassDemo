@@ -4,14 +4,6 @@
 #include "BackdropImageGenerator.g.cpp"
 #endif
 
-#include <Tenkai.hpp>
-
-#include <d3d11_4.h>
-#include <dxgi1_2.h>
-#include <windows.graphics.directx.direct3d11.interop.h>
-
-#include <winrt/Windows.Foundation.Metadata.h>
-
 using namespace winrt;
 
 namespace winrt::WUILiquidGlassDemo::implementation
@@ -29,6 +21,20 @@ namespace winrt::WUILiquidGlassDemo::implementation
         constexpr std::wstring_view kGraphicsCaptureItemRuntimeClassName =
             L"Windows.Graphics.Capture.GraphicsCaptureItem";
         constexpr std::wstring_view kCreateFromVisualMethodName = L"CreateFromVisual";
+
+        wg::SizeInt32 GetVisualSize(wuc::Visual const& visual)
+        {
+            if (!visual)
+            {
+                return {};
+            }
+
+            auto const size = visual.Size();
+            return {
+                std::max(1, static_cast<int32_t>(std::lround(size.x))),
+                std::max(1, static_cast<int32_t>(std::lround(size.y)))
+            };
+        }
 
         wgd11::IDirect3DDevice WrapDxgiDevice(winrt::com_ptr<IDXGIDevice> const& dxgiDevice)
         {
@@ -87,6 +93,7 @@ namespace winrt::WUILiquidGlassDemo::implementation
             frameArrivedRevoker = std::move(m_frameArrivedRevoker);
             captureSession = std::move(m_captureSession);
             framePool = std::move(m_framePool);
+            m_sourceVisual = nullptr;
             m_captureItem = nullptr;
             m_lastFrame = nullptr;
             m_lastSize = {};
@@ -130,16 +137,16 @@ namespace winrt::WUILiquidGlassDemo::implementation
             expectedGeneration = m_captureGeneration;
         }
 
+        auto const initialSize = GetVisualSize(visual);
+        if (initialSize.Width <= 0 || initialSize.Height <= 0)
+        {
+            throw hresult_error(E_INVALIDARG, L"The supplied Visual has an invalid size.");
+        }
+
         auto captureItem = wgc::GraphicsCaptureItem::CreateFromVisual(visual);
         if (!captureItem)
         {
             throw hresult_error(E_FAIL, L"Failed to create GraphicsCaptureItem from the supplied Visual.");
-        }
-
-        auto initialSize = captureItem.Size();
-        if (initialSize.Width <= 0 || initialSize.Height <= 0)
-        {
-            throw hresult_error(E_INVALIDARG, L"The supplied Visual has an invalid capture size.");
         }
 
         auto framePool = wgc::Direct3D11CaptureFramePool::Create(
@@ -148,6 +155,9 @@ namespace winrt::WUILiquidGlassDemo::implementation
             kFrameBufferCount,
             initialSize);
         auto captureSession = framePool.CreateCaptureSession(captureItem);
+
+        //captureSession.IsCursorCaptureEnabled(true);
+        //captureSession.IncludeSecondaryWindows(true);
 
         auto weakThis = get_weak();
         auto frameArrivedRevoker = framePool.FrameArrived(auto_revoke, [weakThis](
@@ -188,6 +198,7 @@ namespace winrt::WUILiquidGlassDemo::implementation
                 oldFrameArrivedRevoker = std::move(m_frameArrivedRevoker);
                 oldCaptureSession = std::move(m_captureSession);
                 oldFramePool = std::move(m_framePool);
+                m_sourceVisual = visual;
                 m_captureItem = std::move(captureItem);
                 m_framePool = framePool;
                 m_captureSession = captureSession;
@@ -218,6 +229,7 @@ namespace winrt::WUILiquidGlassDemo::implementation
             frameArrivedRevoker = std::move(m_frameArrivedRevoker);
             captureSession = std::move(m_captureSession);
             framePool = std::move(m_framePool);
+            m_sourceVisual = nullptr;
             m_captureItem = nullptr;
             m_lastFrame = nullptr;
             m_lastSize = {};
@@ -259,14 +271,9 @@ namespace winrt::WUILiquidGlassDemo::implementation
             return;
         }
 
-        auto contentSize = frame.ContentSize();
-        if (contentSize.Width <= 0 || contentSize.Height <= 0)
-        {
-            return;
-        }
-
         bool recreateRequired = false;
         wgd11::IDirect3DDevice d3dDevice{ nullptr };
+        wuc::Visual sourceVisual{ nullptr };
         wgc::Direct3D11CaptureFrame deliveredFrame{ nullptr };
         {
             std::scoped_lock lock(m_mutex);
@@ -275,13 +282,20 @@ namespace winrt::WUILiquidGlassDemo::implementation
                 return;
             }
 
+            sourceVisual = m_sourceVisual;
+            auto const visualSize = GetVisualSize(sourceVisual);
+            if (visualSize.Width <= 0 || visualSize.Height <= 0)
+            {
+                return;
+            }
+
             recreateRequired =
-                contentSize.Width != m_lastSize.Width ||
-                contentSize.Height != m_lastSize.Height;
+                visualSize.Width != m_lastSize.Width ||
+                visualSize.Height != m_lastSize.Height;
 
             if (recreateRequired)
             {
-                m_lastSize = contentSize;
+                m_lastSize = visualSize;
             }
 
             m_lastFrame = frame;
@@ -316,8 +330,16 @@ namespace winrt::WUILiquidGlassDemo::implementation
                 }
             }
 
+            auto const visualSize = GetVisualSize(sourceVisual);
+            if (visualSize.Width <= 0 || visualSize.Height <= 0)
+            {
+                return;
+            }
+
             frame = nullptr;
-            sender.Recreate(d3dDevice, kCapturePixelFormat, kFrameBufferCount, contentSize);
+            // Do not use frame.ContentSize() here; match the frame pool to the source visual size.
+            // sender.Recreate(d3dDevice, kCapturePixelFormat, kFrameBufferCount, frame.ContentSize());
+            sender.Recreate(d3dDevice, kCapturePixelFormat, kFrameBufferCount, visualSize);
         };
 
         auto recreateOnExit = tenkai::cpp_utils::scope_exit([&]() noexcept

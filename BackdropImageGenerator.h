@@ -1,10 +1,5 @@
 #pragma once
 
-#include <winrt/Windows.Foundation.h>
-#include <winrt/Windows.Graphics.Capture.h>
-#include <winrt/Windows.Graphics.DirectX.Direct3D11.h>
-#include <winrt/Windows.UI.Composition.h>
-
 #include "BackdropImageGenerator.g.h"
 
 namespace winrt::WUILiquidGlassDemo::implementation
@@ -35,6 +30,7 @@ namespace winrt::WUILiquidGlassDemo::implementation
 
         mutable std::mutex m_mutex;
         Windows::Graphics::DirectX::Direct3D11::IDirect3DDevice m_d3dDevice{ nullptr };
+        Windows::UI::Composition::Visual m_sourceVisual{ nullptr };
         Windows::Graphics::Capture::GraphicsCaptureItem m_captureItem{ nullptr };
         Windows::Graphics::Capture::Direct3D11CaptureFramePool m_framePool{ nullptr };
         Windows::Graphics::Capture::GraphicsCaptureSession m_captureSession{ nullptr };

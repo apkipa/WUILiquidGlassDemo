@@ -24,7 +24,7 @@
         <!--
         <Border Background="Blue" Width="100" Height="100" Margin="100" Grid.Row="1" />
         -->
-        <Grid x:Name="BottomLayoutRoot" Grid.Row="1">
+        <Grid x:Name="BottomLayoutRoot" Grid.Row="1" Background="White">
             <StackPanel Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
                 <ProgressRing Width="50" Height="50" IsActive="True" />
                 <StackPanel Orientation="Horizontal" Spacing="12">
@@ -37,6 +37,31 @@
                     <Button Click="RestartAppButtonClick">Restart app</Button>
                 </StackPanel>
             </StackPanel>
+        </Grid>
+        <Grid
+            x:Name="RenderSurfaceHost"
+            Grid.Row="1"
+            IsHitTestVisible="False"
+            SizeChanged="RenderSurfaceHostSizeChanged" />
+        <Grid x:Name="OverlayControlsHost" Grid.Row="1">
+            <Slider
+                x:Name="YOffsetSlider"
+                Width="32"
+                Margin="0,24,12,56"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Stretch"
+                IsDirectionReversed="True"
+                Maximum="0"
+                Orientation="Vertical"
+                ValueChanged="OverlaySliderValueChanged" />
+            <Slider
+                x:Name="XOffsetSlider"
+                Height="32"
+                Margin="24,0,56,12"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Bottom"
+                Maximum="0"
+                ValueChanged="OverlaySliderValueChanged" />
         </Grid>
         <!--
         <Border x:Name="BottomBorder" Background="Blue" BorderThickness="16" BorderBrush="Red" Width="100" Height="100" Margin="100" Grid.Row="1" />
