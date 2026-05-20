@@ -193,7 +193,7 @@ float4 main(VSOutput input) : SV_Target
 
     const float2 halfRect = RectSize * 0.5f;
     const float2 local = input.LocalPosition - halfRect;
-    const float clampedCornerRadius = min(cornerRadius, min(halfRect.x, halfRect.y) - 1.0f);
+    const float clampedCornerRadius = min(cornerRadius, min(halfRect.x, halfRect.y));
     const float radius = max(clampedCornerRadius, 0.0f);
     const float sdf = RoundedRectSdf(local, halfRect, radius);
     const float feather = max(edgeSoftness, 1.0f);
@@ -203,45 +203,30 @@ float4 main(VSOutput input) : SV_Target
         return 0.0f.xxxx;
     }
 
-    const float eps = 1.0f;
-    const float gradX = RoundedRectSdf(local + float2(eps, 0.0f), halfRect, radius) -
-        RoundedRectSdf(local - float2(eps, 0.0f), halfRect, radius);
-    const float gradY = RoundedRectSdf(local + float2(0.0f, eps), halfRect, radius) -
-        RoundedRectSdf(local - float2(0.0f, eps), halfRect, radius);
     const float innerDistance = max(-sdf, 0.0f);
     const float halfMinSize = max(min(halfRect.x, halfRect.y), 1.0f);
-    const float2 normalizedLocal = local / max(halfRect, 1.0f.xx);
-    const float roundness = saturate(radius / halfMinSize);
-    const float shapeExponent = lerp(32.0f, 2.0f, roundness);
-    const float2 absNormalizedLocal = abs(normalizedLocal);
-    const float shapeMetric = pow(
-        pow(absNormalizedLocal.x, shapeExponent) +
-        pow(absNormalizedLocal.y, shapeExponent),
-        1.0f / shapeExponent);
-    const float normalizedShapeMetric = saturate(shapeMetric);
-    // Use a rounded interior field only for center attenuation. The true rounded-rect
-    // SDF depth forms axis-aligned plateaus near the medial axis and can expose seams.
-    const float roundedInteriorDistance = (1.0f - normalizedShapeMetric) * halfMinSize;
-    const float2 refractNormal = normalize(local / max(halfRect, 1.0f.xx) + 1e-5f.xx);
     const float2 domeCoord = local / max(halfRect, 1.0f.xx);
+    const float domeRadius = saturate(length(domeCoord));
+    const float domeDepth = (1.0f - domeRadius) * halfMinSize;
+    const float2 domeNormal = normalize(domeCoord + 1e-5f.xx);
     const float edgeFactor = 1.0f - saturate(innerDistance / max(radius, 1.0f));
-    const float interiorFactor = saturate(innerDistance / halfMinSize);
-    const float edgeDistance = max(radius * 0.2f + borderThickness * 4.0f, 1.0f);
+    const float interiorFactor = saturate(domeDepth / halfMinSize);
+    const float edgeDistance = max(borderThickness * 4.0f + feather * 2.0f, 1.0f);
     const float rimDistance = max(borderThickness * 2.0f + 1.0f, 1.0f);
     const float edgeIntensity = exp(-innerDistance / edgeDistance) * 0.85f;
     const float rimIntensity = exp(-innerDistance / rimDistance) * 0.25f;
     const float centerFade = 1.0f - smoothstep(
-        radius * 0.9f,
-        max(halfMinSize * 0.55f, radius * 0.9f + 1.0f),
-        roundedInteriorDistance);
+        halfMinSize * 0.08f,
+        halfMinSize * 0.55f,
+        domeDepth);
     const float refractionWeight = (edgeIntensity + rimIntensity) * centerFade;
     const float dispersionWeight = edgeIntensity * centerFade;
 
-    const float2 samplePixel = RectOrigin + input.LocalPosition + 0.5f.xx;
+    const float2 samplePixel = RectOrigin + input.LocalPosition;
     const float2 baseUv = samplePixel / SurfaceSize * FrameContentScale;
     const float2 texelSize = 1.0f.xx / FrameTextureSize;
-    const float2 refractUv = baseUv - refractNormal * texelSize * refractionStrength * refractionWeight;
-    const float2 dispersionOffset = refractNormal * texelSize * dispersionStrength * dispersionWeight;
+    const float2 refractUv = baseUv - domeNormal * texelSize * refractionStrength * refractionWeight;
+    const float2 dispersionOffset = domeNormal * texelSize * dispersionStrength * dispersionWeight;
 
     // The final glass pass samples a single transmission input. CPU side selects either
     // the live frame or the preblurred frame so the optical chain stays serial.
