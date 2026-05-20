@@ -8,17 +8,23 @@
   </ItemGroup>
   <ItemGroup>
     <Midl Include="App.idl" />
+    <Midl Include="AnimationFrameScheduler.idl" />
+    <Midl Include="BackdropImageGenerator.idl" />
     <Midl Include="MainPage.idl" />
     <Midl Include="PureBackdropBrush.idl" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp" />
     <ClCompile Include="App.cpp" />
+    <ClCompile Include="AnimationFrameScheduler.cpp" />
+    <ClCompile Include="BackdropImageGenerator.cpp" />
     <ClCompile Include="MainPage.cpp" />
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="AnimationFrameScheduler.h" />
+    <ClInclude Include="BackdropImageGenerator.h" />
     <ClInclude Include="pch.h" />
   </ItemGroup>
   <ItemGroup>

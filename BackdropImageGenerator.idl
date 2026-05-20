@@ -1,0 +1,17 @@
+namespace WUILiquidGlassDemo
+{
+    [default_interface]
+    runtimeclass BackdropImageGenerator
+    {
+        BackdropImageGenerator();
+
+        Windows.Graphics.DirectX.Direct3D11.IDirect3DDevice D3DDevice{ get; set; };
+
+        void SetBackdropImageSourceVisual(Windows.UI.Composition.Visual visual);
+        void ClearBackdropImageSource();
+
+        Windows.Graphics.Capture.Direct3D11CaptureFrame LastFrame{ get; };
+
+        event Windows.Foundation.TypedEventHandler<BackdropImageGenerator, Windows.Graphics.Capture.Direct3D11CaptureFrame> FrameUpdated;
+    }
+}

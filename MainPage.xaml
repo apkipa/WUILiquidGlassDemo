@@ -38,6 +38,8 @@
                 </StackPanel>
             </StackPanel>
         </Grid>
+        <!--
         <Border x:Name="BottomBorder" Background="Blue" BorderThickness="16" BorderBrush="Red" Width="100" Height="100" Margin="100" Grid.Row="1" />
+        -->
     </Grid>
 </Page>

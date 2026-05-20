@@ -207,7 +207,7 @@ namespace winrt::WUILiquidGlassDemo::implementation {
         auto cur_is_transparent = !wv.IsBackgroundTransparent();
         wv.IsBackgroundTransparent(cur_is_transparent);
 
-        if (cur_is_transparent) {
+        /*if (cur_is_transparent) {
             auto compositor = wnd.Compositor();
 #if 1
             auto cb = winrt::get_activation_factory<IActivationFactory>(xaml_typename<XamlCompositionBrushBase>().Name)
@@ -242,7 +242,7 @@ namespace winrt::WUILiquidGlassDemo::implementation {
         }
         else {
             BottomLayoutRoot().Background(nullptr);
-        }
+        }*/
     }
     void MainPage::AskBeforeExitButtonClick(IInspectable const&, RoutedEventArgs const&) {
         if (m_ask_before_close) { return; }

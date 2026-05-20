@@ -1,0 +1,12 @@
+namespace WUILiquidGlassDemo
+{
+    delegate void RequestAnimationFrameCallback(Double timestamp);
+
+    runtimeclass AnimationFrameScheduler
+    {
+        static Int64 RequestAnimationFrame(WUILiquidGlassDemo.RequestAnimationFrameCallback callback);
+        static void CancelAnimationFrame(Int64 requestId);
+
+        static Boolean HasPendingCallbacks{ get; };
+    }
+}
