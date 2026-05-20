@@ -155,8 +155,7 @@ float4 main(VSOutput input) : SV_Target
 )";
 
     constexpr char kOverlayPixelShader[] = R"(
-Texture2D FrameTexture : register(t0);
-Texture2D BlurredTexture : register(t1);
+Texture2D TransmissionTexture : register(t0);
 SamplerState FrameSampler : register(s0);
 
 cbuffer OverlayConstants : register(b0)
@@ -220,6 +219,8 @@ float4 main(VSOutput input) : SV_Target
         pow(absNormalizedLocal.y, shapeExponent),
         1.0f / shapeExponent);
     const float normalizedShapeMetric = saturate(shapeMetric);
+    // Use a rounded interior field only for center attenuation. The true rounded-rect
+    // SDF depth forms axis-aligned plateaus near the medial axis and can expose seams.
     const float roundedInteriorDistance = (1.0f - normalizedShapeMetric) * halfMinSize;
     const float2 refractNormal = normalize(local / max(halfRect, 1.0f.xx) + 1e-5f.xx);
     const float2 domeCoord = local / max(halfRect, 1.0f.xx);
@@ -242,16 +243,12 @@ float4 main(VSOutput input) : SV_Target
     const float2 refractUv = baseUv - refractNormal * texelSize * refractionStrength * refractionWeight;
     const float2 dispersionOffset = refractNormal * texelSize * dispersionStrength * dispersionWeight;
 
-    const float3 sharp = float3(
-        FrameTexture.Sample(FrameSampler, refractUv - dispersionOffset).r,
-        FrameTexture.Sample(FrameSampler, refractUv).g,
-        FrameTexture.Sample(FrameSampler, refractUv + dispersionOffset).b);
-    const float3 blurred = float3(
-        BlurredTexture.Sample(FrameSampler, refractUv - dispersionOffset).r,
-        BlurredTexture.Sample(FrameSampler, refractUv).g,
-        BlurredTexture.Sample(FrameSampler, refractUv + dispersionOffset).b);
-
-    float3 color = blurRadius > 0.0f ? blurred : sharp;
+    // The final glass pass samples a single transmission input. CPU side selects either
+    // the live frame or the preblurred frame so the optical chain stays serial.
+    float3 color = float3(
+        TransmissionTexture.Sample(FrameSampler, refractUv - dispersionOffset).r,
+        TransmissionTexture.Sample(FrameSampler, refractUv).g,
+        TransmissionTexture.Sample(FrameSampler, refractUv + dispersionOffset).b);
     color = lerp(color, 1.0f.xxx, 0.08f + interiorFactor * 0.06f);
 
     const float borderMask = 1.0f - smoothstep(borderThickness, borderThickness + feather, innerDistance);
@@ -1179,7 +1176,7 @@ namespace winrt::WUILiquidGlassDemo::implementation {
             frameShaderResourceView.put()));
 
         auto const blurRadius = static_cast<float>(BlurRadiusSlider().Value()) * scale;
-        ID3D11ShaderResourceView* blurredShaderResourceView = frameShaderResourceView.get();
+        ID3D11ShaderResourceView* transmissionShaderResourceView = frameShaderResourceView.get();
         if (blurRadius > 0.0f)
         {
             EnsureBlurResources(
@@ -1187,7 +1184,9 @@ namespace winrt::WUILiquidGlassDemo::implementation {
                 frameTextureDesc.Width,
                 frameTextureDesc.Height);
             RunBackdropBlur(frameShaderResourceView.get(), blurRadius);
-            blurredShaderResourceView = m_blurShaderResourceViewB.get();
+            // Blur is a preprocessing step. Refraction and dispersion are applied later
+            // in the glass material pass when sampling the chosen transmission texture.
+            transmissionShaderResourceView = m_blurShaderResourceViewB.get();
         }
 
         auto const rectWidth = kOverlayRectWidth * scale;
@@ -1236,12 +1235,9 @@ namespace winrt::WUILiquidGlassDemo::implementation {
 
         ID3D11RenderTargetView* const renderTargets[] = { renderTargetView.get() };
         ID3D11Buffer* const constantBuffers[] = { m_constantBuffer.get() };
-        ID3D11ShaderResourceView* const shaderResources[] = {
-            frameShaderResourceView.get(),
-            blurredShaderResourceView
-        };
+        ID3D11ShaderResourceView* const shaderResources[] = { transmissionShaderResourceView };
         ID3D11SamplerState* const samplers[] = { m_samplerState.get() };
-        ID3D11ShaderResourceView* const nullShaderResources[] = { nullptr, nullptr };
+        ID3D11ShaderResourceView* const nullShaderResources[] = { nullptr };
         ID3D11Buffer* nullVertexBuffer = nullptr;
         UINT stride = 0;
         UINT offset = 0;
@@ -1259,10 +1255,10 @@ namespace winrt::WUILiquidGlassDemo::implementation {
         m_d3dContext->VSSetConstantBuffers(0, 1, constantBuffers);
         m_d3dContext->PSSetShader(m_pixelShader.get(), nullptr, 0);
         m_d3dContext->PSSetConstantBuffers(0, 1, constantBuffers);
-        m_d3dContext->PSSetShaderResources(0, 2, shaderResources);
+        m_d3dContext->PSSetShaderResources(0, 1, shaderResources);
         m_d3dContext->PSSetSamplers(0, 1, samplers);
         m_d3dContext->Draw(4, 0);
-        m_d3dContext->PSSetShaderResources(0, 2, nullShaderResources);
+        m_d3dContext->PSSetShaderResources(0, 1, nullShaderResources);
     }
 
     float MainPage::GetOverlayRasterizationScale()
