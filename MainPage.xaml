@@ -24,7 +24,14 @@
         <!--
         <Border Background="Blue" Width="100" Height="100" Margin="100" Grid.Row="1" />
         -->
-        <Grid x:Name="BottomLayoutRoot" Grid.Row="1" Background="White">
+        <Grid
+            x:Name="BottomLayoutRoot"
+            Grid.Row="1"
+            AllowDrop="True"
+            Background="White"
+            DragEnter="BottomLayoutRootDragEnter"
+            DragOver="BottomLayoutRootDragOver"
+            Drop="BottomLayoutRootDrop">
             <StackPanel Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
                 <ProgressRing Width="50" Height="50" IsActive="True" />
                 <StackPanel Orientation="Horizontal" Spacing="12">

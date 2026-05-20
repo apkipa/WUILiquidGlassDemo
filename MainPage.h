@@ -25,12 +25,23 @@ namespace winrt::WUILiquidGlassDemo::implementation
         fire_and_forget RestartAppButtonClick(Windows::Foundation::IInspectable const& sender, Windows::UI::Xaml::RoutedEventArgs const& args);
         void MainPageLoaded(Windows::Foundation::IInspectable const& sender, Windows::UI::Xaml::RoutedEventArgs const& args);
         void MainPageUnloaded(Windows::Foundation::IInspectable const& sender, Windows::UI::Xaml::RoutedEventArgs const& args);
+        fire_and_forget BottomLayoutRootDragEnter(
+            Windows::Foundation::IInspectable const& sender,
+            Windows::UI::Xaml::DragEventArgs args);
+        fire_and_forget BottomLayoutRootDrop(
+            Windows::Foundation::IInspectable const& sender,
+            Windows::UI::Xaml::DragEventArgs args);
+        fire_and_forget BottomLayoutRootDragOver(
+            Windows::Foundation::IInspectable const& sender,
+            Windows::UI::Xaml::DragEventArgs args);
         void RenderSurfaceHostSizeChanged(Windows::Foundation::IInspectable const& sender, Windows::UI::Xaml::SizeChangedEventArgs const& args);
         void OverlaySliderValueChanged(
             Windows::Foundation::IInspectable const& sender,
             Windows::UI::Xaml::Controls::Primitives::RangeBaseValueChangedEventArgs const& args);
 
     private:
+        Windows::Foundation::IAsyncAction TrySetBottomLayoutRootBackgroundImageAsync(
+            Windows::ApplicationModel::DataTransfer::DataPackageView dataView);
         void InitializeOverlayRenderer();
         void CleanupOverlayRenderer() noexcept;
         void EnsureD3DResources();
@@ -42,9 +53,6 @@ namespace winrt::WUILiquidGlassDemo::implementation
         void ScheduleOverlayRender();
         void RenderOverlaySurface();
         float GetOverlayRasterizationScale();
-
-        static constexpr float kOverlayRectWidth = 200.0f;
-        static constexpr float kOverlayRectHeight = 100.0f;
 
         bool m_ask_before_close{};
         bool m_is_asking{};

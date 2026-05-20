@@ -15,14 +15,19 @@ namespace winrt::Tenkai {
 }
 
 namespace {
+    namespace wadt = winrt::Windows::ApplicationModel::DataTransfer;
     namespace wgd = winrt::Windows::Graphics::DirectX;
     namespace wgd11 = winrt::Windows::Graphics::DirectX::Direct3D11;
+    namespace ws = winrt::Windows::Storage;
+    namespace wuxmi = winrt::Windows::UI::Xaml::Media::Imaging;
     namespace wfn = winrt::Windows::Foundation::Numerics;
     namespace wuc = winrt::Windows::UI::Composition;
 
     constexpr GUID kGaussianBlurEffectId{
         0x1feb6d69, 0x2fe6, 0x4ac9, { 0x8c, 0x58, 0x1d, 0x7f, 0x93, 0xe7, 0xa6, 0xa5 }
     };
+    constexpr float kOverlayRectWidth = 300.0f;
+    constexpr float kOverlayRectHeight = 200.0f;
 
     constexpr char kOverlayVertexShader[] = R"(
 cbuffer OverlayConstants : register(b0)
@@ -365,6 +370,36 @@ float4 main(VSOutput input) : SV_Target
         return texture;
     }
 
+    bool IsImageFile(ws::StorageFile const& file)
+    {
+        if (!file)
+        {
+            return false;
+        }
+
+        auto const contentType = file.ContentType();
+        if (!contentType.empty() && contentType.starts_with(L"image/"))
+        {
+            return true;
+        }
+
+        auto const fileType = file.FileType();
+        return
+            fileType == L".bmp" ||
+            fileType == L".dib" ||
+            fileType == L".gif" ||
+            fileType == L".heic" ||
+            fileType == L".heif" ||
+            fileType == L".ico" ||
+            fileType == L".jfif" ||
+            fileType == L".jpeg" ||
+            fileType == L".jpg" ||
+            fileType == L".png" ||
+            fileType == L".tif" ||
+            fileType == L".tiff" ||
+            fileType == L".webp";
+    }
+
 }
 
 namespace winrt::WUILiquidGlassDemo::implementation {
@@ -396,6 +431,116 @@ namespace winrt::WUILiquidGlassDemo::implementation {
     void MainPage::MainPageUnloaded(IInspectable const&, RoutedEventArgs const&)
     {
         CleanupOverlayRenderer();
+    }
+
+    fire_and_forget MainPage::BottomLayoutRootDragEnter(IInspectable const&, DragEventArgs args)
+    {
+        auto lifetime = get_strong();
+        auto deferral = args.GetDeferral();
+        auto completeDeferral = tenkai::cpp_utils::scope_exit([&]() noexcept
+            {
+                deferral.Complete();
+            });
+
+        if (!args.DataView().Contains(wadt::StandardDataFormats::StorageItems()))
+        {
+            args.AcceptedOperation(wadt::DataPackageOperation::None);
+            co_return;
+        }
+
+        auto items = co_await args.DataView().GetStorageItemsAsync();
+        for (auto const& item : items)
+        {
+            if (auto file = item.try_as<ws::StorageFile>())
+            {
+                if (IsImageFile(file))
+                {
+                    args.AcceptedOperation(wadt::DataPackageOperation::Copy);
+                    co_return;
+                }
+            }
+        }
+
+        args.AcceptedOperation(wadt::DataPackageOperation::None);
+    }
+
+    fire_and_forget MainPage::BottomLayoutRootDrop(IInspectable const&, DragEventArgs args)
+    {
+        auto lifetime = get_strong();
+        auto deferral = args.GetDeferral();
+        auto completeDeferral = tenkai::cpp_utils::scope_exit([&]() noexcept
+            {
+                deferral.Complete();
+            });
+
+        args.AcceptedOperation(wadt::DataPackageOperation::Copy);
+        co_await TrySetBottomLayoutRootBackgroundImageAsync(args.DataView());
+    }
+
+    fire_and_forget MainPage::BottomLayoutRootDragOver(IInspectable const&, DragEventArgs args)
+    {
+        auto lifetime = get_strong();
+        auto deferral = args.GetDeferral();
+        auto completeDeferral = tenkai::cpp_utils::scope_exit([&]() noexcept
+            {
+                deferral.Complete();
+            });
+
+        if (!args.DataView().Contains(wadt::StandardDataFormats::StorageItems()))
+        {
+            args.AcceptedOperation(wadt::DataPackageOperation::None);
+            co_return;
+        }
+
+        auto items = co_await args.DataView().GetStorageItemsAsync();
+        for (auto const& item : items)
+        {
+            if (auto file = item.try_as<ws::StorageFile>())
+            {
+                if (IsImageFile(file))
+                {
+                    args.AcceptedOperation(wadt::DataPackageOperation::Copy);
+                    co_return;
+                }
+            }
+        }
+
+        args.AcceptedOperation(wadt::DataPackageOperation::None);
+    }
+
+    Windows::Foundation::IAsyncAction MainPage::TrySetBottomLayoutRootBackgroundImageAsync(wadt::DataPackageView dataView)
+    {
+        auto lifetime = get_strong();
+
+        if (!dataView || !dataView.Contains(wadt::StandardDataFormats::StorageItems()))
+        {
+            co_return;
+        }
+
+        auto items = co_await dataView.GetStorageItemsAsync();
+        for (auto const& item : items)
+        {
+            auto file = item.try_as<ws::StorageFile>();
+            if (!IsImageFile(file))
+            {
+                continue;
+            }
+
+            auto stream = co_await file.OpenAsync(ws::FileAccessMode::Read);
+            auto bitmap = wuxmi::BitmapImage();
+            co_await bitmap.SetSourceAsync(stream);
+
+            auto brush = ImageBrush();
+            brush.ImageSource(bitmap);
+            brush.Stretch(Stretch::UniformToFill);
+            brush.AlignmentX(AlignmentX::Center);
+            brush.AlignmentY(AlignmentY::Center);
+            BottomLayoutRoot().Background(brush);
+
+            auto wnd = Tenkai::Window::GetCurrentMain();
+            wnd.View().IsBackgroundTransparent(false);
+            co_return;
+        }
     }
 
     void MainPage::RenderSurfaceHostSizeChanged(IInspectable const&, SizeChangedEventArgs const&)
