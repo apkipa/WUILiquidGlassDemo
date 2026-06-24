@@ -3,9 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.8.34408.163
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{B4AE220B-26E9-47D5-A6CE-09215B8E43B5}") = "WUILiquidGlassDemo", "WUILiquidGlassDemo.vcxproj", "{EC642A4A-FB5A-4D49-BA12-9EB3C79D1D87}"
+Project("{B4AE220B-26E9-47D5-A6CE-09215B8E43B5}") = "WUILiquidGlassDemo", "WinUI2\WUILiquidGlassDemo.vcxproj", "{EC642A4A-FB5A-4D49-BA12-9EB3C79D1D87}"
 EndProject
-Project("{B4AE220B-26E9-47D5-A6CE-09215B8E43B5}") = "WUILiquidGlassDemo.Win32", "WUILiquidGlassDemo.Win32.vcxproj", "{FDA7DD16-34D0-4852-B486-F20E4C283784}"
+Project("{B4AE220B-26E9-47D5-A6CE-09215B8E43B5}") = "WUILiquidGlassDemo.Win32", "WinUI2\WUILiquidGlassDemo.Win32.vcxproj", "{FDA7DD16-34D0-4852-B486-F20E4C283784}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

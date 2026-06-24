@@ -31,13 +31,13 @@
 
 ## 代码结构
 
-- [BackdropImageGenerator.h](./BackdropImageGenerator.h) / [BackdropImageGenerator.cpp](./BackdropImageGenerator.cpp)
+- [BackdropImageGenerator.h](./WinUI2/BackdropImageGenerator.h) / [BackdropImageGenerator.cpp](./WinUI2/BackdropImageGenerator.cpp)
   负责捕获 live backdrop，输出 `Direct3D11CaptureFrame`，并通过 `LastFrame` 暴露最新 frame。
-- [AnimationFrameScheduler.h](./AnimationFrameScheduler.h) / [AnimationFrameScheduler.cpp](./AnimationFrameScheduler.cpp)
+- [AnimationFrameScheduler.h](./WinUI2/AnimationFrameScheduler.h) / [AnimationFrameScheduler.cpp](./WinUI2/AnimationFrameScheduler.cpp)
   提供类似 requestAnimationFrame 的调度能力，用来合并多次重绘请求。
-- [MainPage.xaml](./MainPage.xaml)
+- [MainPage.xaml](./WinUI2/MainPage.xaml)
   承载演示 UI、参数 slider，以及自定义渲染用的 composition 宿主。
-- [MainPage.h](./MainPage.h) / [MainPage.cpp](./MainPage.cpp)
+- [MainPage.h](./WinUI2/MainPage.h) / [MainPage.cpp](./WinUI2/MainPage.cpp)
   持有 D3D11 资源、blur pass、composition surface，以及最终玻璃材质 shader。
 ## 全链路说明
 
