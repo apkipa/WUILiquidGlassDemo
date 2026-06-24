@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "CustomInvertEffect.h"
+#include "CustomBlurEffect.h"
 #include "MainWindow.xaml.h"
 #if __has_include("MainWindow.g.cpp")
 #include "MainWindow.g.cpp"
@@ -39,10 +39,11 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
 
         auto compositor = ElementCompositionPreview::GetElementVisual(Root()).Compositor();
         m_backdropVisual = compositor.CreateSpriteVisual();
-        // Keep custom-effect failures visible while validating the dwmcorei ABI. Falling
-        // back to a normal backdrop brush would make it impossible to tell whether the
-        // displayed pixels came from our shader or from the system brush path.
-        m_backdropVisual.Brush(CustomInvertEffect::CreateBackdropBrush(compositor));
+        // Keep the invert call commented instead of deleting it so the active effect is
+        // obvious while comparing the old color-only path with the new custom-sampler
+        // blur path.
+        // m_backdropVisual.Brush(CustomInvertEffect::CreateBackdropBrush(compositor));
+        m_backdropVisual.Brush(CustomBlurEffect::CreateBackdropBrush(compositor));
         m_backdropVisual.Offset({ kInitialBackdropOffsetX, kInitialBackdropOffsetY, 0.0f });
         m_backdropVisual.Size({ kInitialBackdropWidth, kInitialBackdropHeight });
 

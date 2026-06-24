@@ -12,12 +12,18 @@
   <ItemGroup>
     <ClCompile Include="pch.cpp" />
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
+    <ClCompile Include="CustomBlurEffect.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="CustomInvertEffect.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
+    <ClInclude Include="CustomBlurEffect.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="CustomInvertEffect.h">
       <Filter>Header Files</Filter>
     </ClInclude>
