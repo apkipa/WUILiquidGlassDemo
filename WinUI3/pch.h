@@ -20,6 +20,7 @@
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Graphics.Effects.h>
+#include <winrt/Windows.UI.h>
 #include <winrt/Windows.ApplicationModel.Activation.h>
 #include <winrt/Microsoft.UI.Content.h>
 #include <winrt/Microsoft.UI.Input.h>

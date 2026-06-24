@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "CustomBlurEffect.h"
+#include "CustomInvertEffect.h"
 #include "MainWindow.xaml.h"
 #if __has_include("MainWindow.g.cpp")
 #include "MainWindow.g.cpp"
@@ -18,7 +19,7 @@ namespace
 {
     constexpr float kInitialBackdropWidth = 420.0f;
     constexpr float kInitialBackdropHeight = 260.0f;
-    constexpr float kInitialBackdropOffsetX = 80.0f;
+    constexpr float kInitialBackdropOffsetX = 268.0f;
     constexpr float kInitialBackdropOffsetY = 80.0f;
     constexpr float kMinimumBackdropWidth = 120.0f;
     constexpr float kMinimumBackdropHeight = 80.0f;
@@ -37,25 +38,45 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         StartDynamicScene();
         InitializeBackdropCursors();
 
-        auto compositor = ElementCompositionPreview::GetElementVisual(Root()).Compositor();
-        m_backdropVisual = compositor.CreateSpriteVisual();
-        // Keep the invert call commented instead of deleting it so the active effect is
-        // obvious while comparing the old color-only path with the new custom-sampler
-        // blur path.
-        // m_backdropVisual.Brush(CustomInvertEffect::CreateBackdropBrush(compositor));
-        m_backdropVisual.Brush(CustomBlurEffect::CreateBackdropBrush(compositor));
-        m_backdropVisual.Offset({ kInitialBackdropOffsetX, kInitialBackdropOffsetY, 0.0f });
-        m_backdropVisual.Size({ kInitialBackdropWidth, kInitialBackdropHeight });
+        m_borderWidth = static_cast<float>(BorderWidthSlider().Value());
+        BackdropFrame().BorderThickness({ m_borderWidth, m_borderWidth, m_borderWidth, m_borderWidth });
+        Controls::Canvas::SetLeft(BackdropFrame(), kInitialBackdropOffsetX);
+        Controls::Canvas::SetTop(BackdropFrame(), kInitialBackdropOffsetY);
+        BackdropFrame().Width(kInitialBackdropWidth);
+        BackdropFrame().Height(kInitialBackdropHeight);
 
-        ElementCompositionPreview::SetElementChildVisual(Root(), m_backdropVisual);
-        Root().SizeChanged([weak = get_weak()](auto&&, auto&&)
+        auto compositor = ElementCompositionPreview::GetElementVisual(BackdropVisualHost()).Compositor();
+        m_backdropVisual = compositor.CreateSpriteVisual();
+        ApplyBackdropEffect();
+        UpdateBackdropVisualSize();
+
+        ElementCompositionPreview::SetElementChildVisual(BackdropVisualHost(), m_backdropVisual);
+        EffectSelector().SelectionChanged([weak = get_weak()](
+            IInspectable const& sender,
+            Controls::SelectionChangedEventArgs const& args)
+        {
+            if (auto self = weak.get())
+            {
+                self->OnEffectSelectionChanged(sender, args);
+            }
+        });
+        BorderWidthSlider().ValueChanged([weak = get_weak()](
+            IInspectable const& sender,
+            Controls::Primitives::RangeBaseValueChangedEventArgs const& args)
+        {
+            if (auto self = weak.get())
+            {
+                self->OnBorderWidthChanged(sender, args);
+            }
+        });
+        BackdropHost().SizeChanged([weak = get_weak()](auto&&, auto&&)
         {
             if (auto self = weak.get())
             {
                 self->ClampBackdropVisualRect();
             }
         });
-        Root().Loaded([weak = get_weak()](auto&&, auto&&)
+        BackdropHost().Loaded([weak = get_weak()](auto&&, auto&&)
         {
             if (auto self = weak.get())
             {
@@ -63,58 +84,58 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
                 self->SetBackdropCursor(self->m_arrowCursor);
             }
         });
-        Root().PointerPressed([weak = get_weak()](
+        BackdropHost().PointerPressed([weak = get_weak()](
             IInspectable const& sender,
             PointerRoutedEventArgs const& args)
         {
             if (auto self = weak.get())
             {
-                self->OnRootPointerPressed(sender, args);
+                self->OnBackdropHostPointerPressed(sender, args);
             }
         });
-        Root().PointerMoved([weak = get_weak()](
+        BackdropHost().PointerMoved([weak = get_weak()](
             IInspectable const& sender,
             PointerRoutedEventArgs const& args)
         {
             if (auto self = weak.get())
             {
-                self->OnRootPointerMoved(sender, args);
+                self->OnBackdropHostPointerMoved(sender, args);
             }
         });
-        Root().PointerReleased([weak = get_weak()](
+        BackdropHost().PointerReleased([weak = get_weak()](
             IInspectable const& sender,
             PointerRoutedEventArgs const& args)
         {
             if (auto self = weak.get())
             {
-                self->OnRootPointerReleased(sender, args);
+                self->OnBackdropHostPointerReleased(sender, args);
             }
         });
-        Root().PointerCanceled([weak = get_weak()](
+        BackdropHost().PointerCanceled([weak = get_weak()](
             IInspectable const& sender,
             PointerRoutedEventArgs const& args)
         {
             if (auto self = weak.get())
             {
-                self->OnRootPointerCanceled(sender, args);
+                self->OnBackdropHostPointerCanceled(sender, args);
             }
         });
-        Root().PointerCaptureLost([weak = get_weak()](
+        BackdropHost().PointerCaptureLost([weak = get_weak()](
             IInspectable const& sender,
             PointerRoutedEventArgs const& args)
         {
             if (auto self = weak.get())
             {
-                self->OnRootPointerCaptureLost(sender, args);
+                self->OnBackdropHostPointerCaptureLost(sender, args);
             }
         });
-        Root().PointerExited([weak = get_weak()](
+        BackdropHost().PointerExited([weak = get_weak()](
             IInspectable const& sender,
             PointerRoutedEventArgs const& args)
         {
             if (auto self = weak.get())
             {
-                self->OnRootPointerExited(sender, args);
+                self->OnBackdropHostPointerExited(sender, args);
             }
         });
 
@@ -131,6 +152,45 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         }
     }
 
+    void MainWindow::ApplyBackdropEffect()
+    {
+        if (!m_backdropVisual)
+        {
+            return;
+        }
+
+        auto const compositor = ElementCompositionPreview::GetElementVisual(BackdropVisualHost()).Compositor();
+        switch (m_backdropEffect)
+        {
+        case BackdropEffectKind::Invert:
+            m_backdropVisual.Brush(CustomInvertEffect::CreateBackdropBrush(compositor));
+            EffectCaption().Text(L"Backdrop inversion");
+            break;
+        case BackdropEffectKind::Blur:
+            m_backdropVisual.Brush(CustomBlurEffect::CreateBackdropBrush(compositor));
+            EffectCaption().Text(L"Backdrop blur");
+            break;
+        case BackdropEffectKind::Solid:
+        default:
+            m_backdropVisual.Brush(compositor.CreateColorBrush(winrt::Windows::UI::Color{ 0x99, 0xff, 0xff, 0xff }));
+            EffectCaption().Text(L"Solid translucent brush");
+            break;
+        }
+    }
+
+    void MainWindow::UpdateBackdropVisualSize()
+    {
+        if (!m_backdropVisual)
+        {
+            return;
+        }
+
+        auto const innerWidth = std::max(0.0f, static_cast<float>(BackdropFrame().Width()) - (m_borderWidth * 2.0f));
+        auto const innerHeight = std::max(0.0f, static_cast<float>(BackdropFrame().Height()) - (m_borderWidth * 2.0f));
+        m_backdropVisual.Offset({ 0.0f, 0.0f, 0.0f });
+        m_backdropVisual.Size({ innerWidth, innerHeight });
+    }
+
     void MainWindow::ClampBackdropVisualRect()
     {
         if (!m_backdropVisual)
@@ -138,50 +198,67 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
             return;
         }
 
-        auto const rootWidth = static_cast<float>(Root().ActualWidth());
-        auto const rootHeight = static_cast<float>(Root().ActualHeight());
+        auto const rootWidth = static_cast<float>(BackdropHost().ActualWidth());
+        auto const rootHeight = static_cast<float>(BackdropHost().ActualHeight());
         if (rootWidth <= 0.0f || rootHeight <= 0.0f)
         {
             return;
         }
 
-        auto const size = m_backdropVisual.Size();
-        auto const offset = m_backdropVisual.Offset();
-        auto const width = std::clamp(size.x, kMinimumBackdropWidth, std::max(kMinimumBackdropWidth, rootWidth));
-        auto const height = std::clamp(size.y, kMinimumBackdropHeight, std::max(kMinimumBackdropHeight, rootHeight));
-        auto const x = std::clamp(offset.x, 0.0f, std::max(0.0f, rootWidth - width));
-        auto const y = std::clamp(offset.y, 0.0f, std::max(0.0f, rootHeight - height));
+        auto const width = std::clamp(
+            static_cast<float>(BackdropFrame().Width()),
+            kMinimumBackdropWidth,
+            std::max(kMinimumBackdropWidth, rootWidth));
+        auto const height = std::clamp(
+            static_cast<float>(BackdropFrame().Height()),
+            kMinimumBackdropHeight,
+            std::max(kMinimumBackdropHeight, rootHeight));
+        auto const x = std::clamp(
+            static_cast<float>(Controls::Canvas::GetLeft(BackdropFrame())),
+            0.0f,
+            std::max(0.0f, rootWidth - width));
+        auto const y = std::clamp(
+            static_cast<float>(Controls::Canvas::GetTop(BackdropFrame())),
+            0.0f,
+            std::max(0.0f, rootHeight - height));
 
-        m_backdropVisual.Size({ width, height });
-        m_backdropVisual.Offset({ x, y, 0.0f });
+        BackdropFrame().Width(width);
+        BackdropFrame().Height(height);
+        Controls::Canvas::SetLeft(BackdropFrame(), x);
+        Controls::Canvas::SetTop(BackdropFrame(), y);
+        UpdateBackdropVisualSize();
     }
 
-    bool MainWindow::HitTestBackdropVisual(Point const& position) const
+    bool MainWindow::HitTestBackdropVisual(Point const& position)
     {
         if (!m_backdropVisual)
         {
             return false;
         }
 
-        auto const offset = m_backdropVisual.Offset();
-        auto const size = m_backdropVisual.Size();
-        return position.X >= offset.x &&
-            position.X <= offset.x + size.x &&
-            position.Y >= offset.y &&
-            position.Y <= offset.y + size.y;
+        auto const x = static_cast<float>(Controls::Canvas::GetLeft(BackdropFrame()));
+        auto const y = static_cast<float>(Controls::Canvas::GetTop(BackdropFrame()));
+        auto const width = static_cast<float>(BackdropFrame().Width());
+        auto const height = static_cast<float>(BackdropFrame().Height());
+        return position.X >= x &&
+            position.X <= x + width &&
+            position.Y >= y &&
+            position.Y <= y + height;
     }
 
-    bool MainWindow::HitTestResizeGrip(Point const& position) const
+    bool MainWindow::HitTestResizeGrip(Point const& position)
     {
         if (!m_backdropVisual || !HitTestBackdropVisual(position))
         {
             return false;
         }
 
-        auto const offset = m_backdropVisual.Offset();
-        auto const size = m_backdropVisual.Size();
-        return position.X >= offset.x + size.x - kResizeGripSize &&
-            position.Y >= offset.y + size.y - kResizeGripSize;
+        auto const x = static_cast<float>(Controls::Canvas::GetLeft(BackdropFrame()));
+        auto const y = static_cast<float>(Controls::Canvas::GetTop(BackdropFrame()));
+        auto const width = static_cast<float>(BackdropFrame().Width());
+        auto const height = static_cast<float>(BackdropFrame().Height());
+        return position.X >= x + width - kResizeGripSize &&
+            position.Y >= y + height - kResizeGripSize;
     }
 
     void MainWindow::InitializeBackdropCursors()
@@ -199,7 +276,7 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
             return;
         }
 
-        auto const xamlRoot = Root().XamlRoot();
+        auto const xamlRoot = BackdropHost().XamlRoot();
         if (!xamlRoot)
         {
             return;
@@ -221,9 +298,9 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
             return;
         }
 
-        if (auto protectedRoot = Root().try_as<IUIElementProtected>())
+        if (auto protectedHost = BackdropHost().try_as<IUIElementProtected>())
         {
-            protectedRoot.ProtectedCursor(cursor);
+            protectedHost.ProtectedCursor(cursor);
         }
 
         // SpriteVisual is not a XAML element, so setting the cursor only through
@@ -253,7 +330,7 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         SetBackdropCursor(m_arrowCursor);
     }
 
-    void MainWindow::OnRootPointerPressed(IInspectable const&, PointerRoutedEventArgs const& args)
+    void MainWindow::OnBackdropHostPointerPressed(IInspectable const&, PointerRoutedEventArgs const& args)
     {
         if (!m_backdropVisual)
         {
@@ -261,7 +338,7 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
             return;
         }
 
-        auto const point = args.GetCurrentPoint(Root());
+        auto const point = args.GetCurrentPoint(BackdropHost());
         auto const position = point.Position();
         if (!HitTestBackdropVisual(position))
         {
@@ -269,26 +346,24 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
             return;
         }
 
-        auto const offset = m_backdropVisual.Offset();
-        auto const size = m_backdropVisual.Size();
         m_backdropInteraction = HitTestResizeGrip(position)
             ? BackdropInteraction::Resize
             : BackdropInteraction::Drag;
         m_activePointerId = point.PointerId();
         m_startPointer = position;
-        m_startOffsetX = offset.x;
-        m_startOffsetY = offset.y;
-        m_startWidth = size.x;
-        m_startHeight = size.y;
+        m_startOffsetX = static_cast<float>(Controls::Canvas::GetLeft(BackdropFrame()));
+        m_startOffsetY = static_cast<float>(Controls::Canvas::GetTop(BackdropFrame()));
+        m_startWidth = static_cast<float>(BackdropFrame().Width());
+        m_startHeight = static_cast<float>(BackdropFrame().Height());
 
         UpdateBackdropCursor(position);
-        Root().CapturePointer(args.Pointer());
+        BackdropHost().CapturePointer(args.Pointer());
         args.Handled(true);
     }
 
-    void MainWindow::OnRootPointerMoved(IInspectable const&, PointerRoutedEventArgs const& args)
+    void MainWindow::OnBackdropHostPointerMoved(IInspectable const&, PointerRoutedEventArgs const& args)
     {
-        auto const point = args.GetCurrentPoint(Root());
+        auto const point = args.GetCurrentPoint(BackdropHost());
         auto const position = point.Position();
         if (!m_backdropVisual)
         {
@@ -309,67 +384,96 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
 
         auto const deltaX = position.X - m_startPointer.X;
         auto const deltaY = position.Y - m_startPointer.Y;
-        auto const rootWidth = static_cast<float>(Root().ActualWidth());
-        auto const rootHeight = static_cast<float>(Root().ActualHeight());
+        auto const rootWidth = static_cast<float>(BackdropHost().ActualWidth());
+        auto const rootHeight = static_cast<float>(BackdropHost().ActualHeight());
         UpdateBackdropCursor(position);
 
         if (m_backdropInteraction == BackdropInteraction::Resize)
         {
             auto const maxWidth = std::max(kMinimumBackdropWidth, rootWidth - m_startOffsetX);
             auto const maxHeight = std::max(kMinimumBackdropHeight, rootHeight - m_startOffsetY);
-            m_backdropVisual.Size({
-                std::clamp(m_startWidth + deltaX, kMinimumBackdropWidth, maxWidth),
-                std::clamp(m_startHeight + deltaY, kMinimumBackdropHeight, maxHeight),
-            });
+            BackdropFrame().Width(std::clamp(m_startWidth + deltaX, kMinimumBackdropWidth, maxWidth));
+            BackdropFrame().Height(std::clamp(m_startHeight + deltaY, kMinimumBackdropHeight, maxHeight));
+            UpdateBackdropVisualSize();
         }
         else
         {
-            auto const size = m_backdropVisual.Size();
-            m_backdropVisual.Offset({
-                std::clamp(m_startOffsetX + deltaX, 0.0f, std::max(0.0f, rootWidth - size.x)),
-                std::clamp(m_startOffsetY + deltaY, 0.0f, std::max(0.0f, rootHeight - size.y)),
-                0.0f,
-            });
+            auto const width = static_cast<float>(BackdropFrame().Width());
+            auto const height = static_cast<float>(BackdropFrame().Height());
+            Controls::Canvas::SetLeft(
+                BackdropFrame(),
+                std::clamp(m_startOffsetX + deltaX, 0.0f, std::max(0.0f, rootWidth - width)));
+            Controls::Canvas::SetTop(
+                BackdropFrame(),
+                std::clamp(m_startOffsetY + deltaY, 0.0f, std::max(0.0f, rootHeight - height)));
         }
 
         args.Handled(true);
     }
 
-    void MainWindow::OnRootPointerReleased(IInspectable const&, PointerRoutedEventArgs const& args)
+    void MainWindow::OnBackdropHostPointerReleased(IInspectable const&, PointerRoutedEventArgs const& args)
     {
         if (m_backdropInteraction != BackdropInteraction::None)
         {
-            auto const position = args.GetCurrentPoint(Root()).Position();
-            Root().ReleasePointerCapture(args.Pointer());
+            auto const position = args.GetCurrentPoint(BackdropHost()).Position();
+            BackdropHost().ReleasePointerCapture(args.Pointer());
             EndBackdropInteraction();
             UpdateBackdropCursor(position);
             args.Handled(true);
         }
     }
 
-    void MainWindow::OnRootPointerCanceled(IInspectable const&, PointerRoutedEventArgs const& args)
+    void MainWindow::OnBackdropHostPointerCanceled(IInspectable const&, PointerRoutedEventArgs const& args)
     {
         if (m_backdropInteraction != BackdropInteraction::None)
         {
-            Root().ReleasePointerCapture(args.Pointer());
+            BackdropHost().ReleasePointerCapture(args.Pointer());
             EndBackdropInteraction();
             SetBackdropCursor(m_arrowCursor);
             args.Handled(true);
         }
     }
 
-    void MainWindow::OnRootPointerCaptureLost(IInspectable const&, PointerRoutedEventArgs const&)
+    void MainWindow::OnBackdropHostPointerCaptureLost(IInspectable const&, PointerRoutedEventArgs const&)
     {
         EndBackdropInteraction();
         SetBackdropCursor(m_arrowCursor);
     }
 
-    void MainWindow::OnRootPointerExited(IInspectable const&, PointerRoutedEventArgs const&)
+    void MainWindow::OnBackdropHostPointerExited(IInspectable const&, PointerRoutedEventArgs const&)
     {
         if (m_backdropInteraction == BackdropInteraction::None)
         {
             SetBackdropCursor(m_arrowCursor);
         }
+    }
+
+    void MainWindow::OnEffectSelectionChanged(IInspectable const&, Controls::SelectionChangedEventArgs const&)
+    {
+        auto const selectedIndex = EffectSelector().SelectedIndex();
+        if (selectedIndex == 1)
+        {
+            m_backdropEffect = BackdropEffectKind::Blur;
+        }
+        else if (selectedIndex == 2)
+        {
+            m_backdropEffect = BackdropEffectKind::Invert;
+        }
+        else
+        {
+            m_backdropEffect = BackdropEffectKind::Solid;
+        }
+
+        ApplyBackdropEffect();
+    }
+
+    void MainWindow::OnBorderWidthChanged(
+        IInspectable const&,
+        Controls::Primitives::RangeBaseValueChangedEventArgs const& args)
+    {
+        m_borderWidth = static_cast<float>(args.NewValue());
+        BackdropFrame().BorderThickness({ m_borderWidth, m_borderWidth, m_borderWidth, m_borderWidth });
+        UpdateBackdropVisualSize();
     }
 
     void MainWindow::EndBackdropInteraction()

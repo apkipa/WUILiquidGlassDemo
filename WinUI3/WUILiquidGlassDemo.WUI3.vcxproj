@@ -133,6 +133,7 @@
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="CustomBlurEffect.h" />
+    <ClInclude Include="CustomEffectRuntime.h" />
     <ClInclude Include="CustomInvertEffect.h" />
     <ClInclude Include="App.xaml.h">
       <DependentUpon>App.xaml</DependentUpon>
@@ -150,6 +151,7 @@
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="CustomBlurEffect.cpp" />
+    <ClCompile Include="CustomEffectRuntime.cpp" />
     <ClCompile Include="CustomInvertEffect.cpp" />
     <ClCompile Include="App.xaml.cpp">
       <DependentUpon>App.xaml</DependentUpon>

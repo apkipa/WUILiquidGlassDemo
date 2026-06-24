@@ -16,12 +16,21 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
             Resize,
         };
 
+        enum class BackdropEffectKind
+        {
+            Solid,
+            Blur,
+            Invert,
+        };
+
         winrt::Microsoft::UI::Composition::SpriteVisual m_backdropVisual{ nullptr };
         winrt::Microsoft::UI::Input::InputPointerSource m_pointerSource{ nullptr };
         winrt::Microsoft::UI::Input::InputCursor m_arrowCursor{ nullptr };
         winrt::Microsoft::UI::Input::InputCursor m_moveCursor{ nullptr };
         winrt::Microsoft::UI::Input::InputCursor m_resizeCursor{ nullptr };
+        BackdropEffectKind m_backdropEffect{ BackdropEffectKind::Solid };
         BackdropInteraction m_backdropInteraction{ BackdropInteraction::None };
+        float m_borderWidth{ 2.0f };
         uint32_t m_activePointerId{};
         winrt::Windows::Foundation::Point m_startPointer{};
         float m_startOffsetX{};
@@ -30,31 +39,39 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         float m_startHeight{};
 
         void StartDynamicScene();
+        void ApplyBackdropEffect();
+        void UpdateBackdropVisualSize();
         void ClampBackdropVisualRect();
-        bool HitTestBackdropVisual(winrt::Windows::Foundation::Point const& position) const;
-        bool HitTestResizeGrip(winrt::Windows::Foundation::Point const& position) const;
+        bool HitTestBackdropVisual(winrt::Windows::Foundation::Point const& position);
+        bool HitTestResizeGrip(winrt::Windows::Foundation::Point const& position);
         void InitializeBackdropCursors();
         void EnsurePointerSource();
         void SetBackdropCursor(winrt::Microsoft::UI::Input::InputCursor const& cursor);
         void UpdateBackdropCursor(winrt::Windows::Foundation::Point const& position);
-        void OnRootPointerPressed(
+        void OnBackdropHostPointerPressed(
             winrt::Windows::Foundation::IInspectable const& sender,
             winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
-        void OnRootPointerMoved(
+        void OnBackdropHostPointerMoved(
             winrt::Windows::Foundation::IInspectable const& sender,
             winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
-        void OnRootPointerReleased(
+        void OnBackdropHostPointerReleased(
             winrt::Windows::Foundation::IInspectable const& sender,
             winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
-        void OnRootPointerCanceled(
+        void OnBackdropHostPointerCanceled(
             winrt::Windows::Foundation::IInspectable const& sender,
             winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
-        void OnRootPointerCaptureLost(
+        void OnBackdropHostPointerCaptureLost(
             winrt::Windows::Foundation::IInspectable const& sender,
             winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
-        void OnRootPointerExited(
+        void OnBackdropHostPointerExited(
             winrt::Windows::Foundation::IInspectable const& sender,
             winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
+        void OnEffectSelectionChanged(
+            winrt::Windows::Foundation::IInspectable const& sender,
+            winrt::Microsoft::UI::Xaml::Controls::SelectionChangedEventArgs const& args);
+        void OnBorderWidthChanged(
+            winrt::Windows::Foundation::IInspectable const& sender,
+            winrt::Microsoft::UI::Xaml::Controls::Primitives::RangeBaseValueChangedEventArgs const& args);
         void EndBackdropInteraction();
     };
 }

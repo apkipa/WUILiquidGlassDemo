@@ -10,6 +10,11 @@
     Title="WUILiquidGlassDemo.WUI3">
 
     <Grid x:Name="Root" Background="Transparent">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="188" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
         <Grid.Resources>
             <Storyboard x:Key="DynamicSceneStoryboard" RepeatBehavior="Forever">
                 <DoubleAnimation Storyboard.TargetName="RedOrb"
@@ -77,94 +82,140 @@
             </Storyboard>
         </Grid.Resources>
 
-        <Canvas IsHitTestVisible="False">
-            <Ellipse x:Name="RedOrb"
-                     Width="170"
-                     Height="170"
-                     Canvas.Left="72"
-                     Canvas.Top="54"
-                     Fill="#FFE94B5F"
-                     Opacity="0.95">
-                <Ellipse.RenderTransform>
-                    <CompositeTransform />
-                </Ellipse.RenderTransform>
-            </Ellipse>
+        <Grid Grid.ColumnSpan="2"
+              Background="Transparent">
+            <Canvas IsHitTestVisible="False">
+                <Ellipse x:Name="RedOrb"
+                         Width="170"
+                         Height="170"
+                         Canvas.Left="72"
+                         Canvas.Top="54"
+                         Fill="#FFE94B5F"
+                         Opacity="0.95">
+                    <Ellipse.RenderTransform>
+                        <CompositeTransform />
+                    </Ellipse.RenderTransform>
+                </Ellipse>
 
-            <Ellipse x:Name="CyanOrb"
-                     Width="220"
-                     Height="220"
-                     Canvas.Left="430"
-                     Canvas.Top="245"
-                     Fill="#FF21C7C9"
-                     Opacity="0.9">
-                <Ellipse.RenderTransform>
-                    <CompositeTransform />
-                </Ellipse.RenderTransform>
-            </Ellipse>
+                <Ellipse x:Name="CyanOrb"
+                         Width="220"
+                         Height="220"
+                         Canvas.Left="430"
+                         Canvas.Top="245"
+                         Fill="#FF21C7C9"
+                         Opacity="0.9">
+                    <Ellipse.RenderTransform>
+                        <CompositeTransform />
+                    </Ellipse.RenderTransform>
+                </Ellipse>
 
-            <Rectangle x:Name="GoldBar"
-                       Width="760"
-                       Height="44"
-                       Canvas.Left="-160"
-                       Canvas.Top="185"
-                       Fill="#FFF2C94C"
-                       Opacity="0.9"
-                       RenderTransformOrigin="0.5,0.5">
-                <Rectangle.RenderTransform>
-                    <CompositeTransform Rotation="-13" />
-                </Rectangle.RenderTransform>
-            </Rectangle>
+                <Rectangle x:Name="GoldBar"
+                           Width="760"
+                           Height="44"
+                           Canvas.Left="-160"
+                           Canvas.Top="185"
+                           Fill="#FFF2C94C"
+                           Opacity="0.9"
+                           RenderTransformOrigin="0.5,0.5">
+                    <Rectangle.RenderTransform>
+                        <CompositeTransform Rotation="-13" />
+                    </Rectangle.RenderTransform>
+                </Rectangle>
 
-            <Rectangle x:Name="BlueBar"
-                       Width="820"
-                       Height="36"
-                       Canvas.Left="90"
-                       Canvas.Top="420"
-                       Fill="#FF5A7CFF"
-                       Opacity="0.78"
-                       RenderTransformOrigin="0.5,0.5">
-                <Rectangle.RenderTransform>
-                    <CompositeTransform Rotation="9" />
-                </Rectangle.RenderTransform>
-            </Rectangle>
+                <Rectangle x:Name="BlueBar"
+                           Width="820"
+                           Height="36"
+                           Canvas.Left="90"
+                           Canvas.Top="420"
+                           Fill="#FF5A7CFF"
+                           Opacity="0.78"
+                           RenderTransformOrigin="0.5,0.5">
+                    <Rectangle.RenderTransform>
+                        <CompositeTransform Rotation="9" />
+                    </Rectangle.RenderTransform>
+                </Rectangle>
 
-            <Ellipse x:Name="PulseRing"
-                     Width="260"
-                     Height="260"
-                     Canvas.Left="245"
-                     Canvas.Top="88"
-                     Stroke="#FFE36BFF"
-                     StrokeThickness="18"
-                     Opacity="0.45"
-                     RenderTransformOrigin="0.5,0.5">
-                <Ellipse.RenderTransform>
-                    <CompositeTransform />
-                </Ellipse.RenderTransform>
-            </Ellipse>
+                <Ellipse x:Name="PulseRing"
+                         Width="260"
+                         Height="260"
+                         Canvas.Left="245"
+                         Canvas.Top="88"
+                         Stroke="#FFE36BFF"
+                         StrokeThickness="18"
+                         Opacity="0.45"
+                         RenderTransformOrigin="0.5,0.5">
+                    <Ellipse.RenderTransform>
+                        <CompositeTransform />
+                    </Ellipse.RenderTransform>
+                </Ellipse>
+            </Canvas>
+
+            <ProgressRing Width="72"
+                          Height="72"
+                          HorizontalAlignment="Right"
+                          VerticalAlignment="Top"
+                          Margin="0,36,44,0"
+                          IsActive="True"
+                          IsHitTestVisible="False" />
+
+            <Grid HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  Width="440"
+                  Height="220"
+                  Background="#CCFFFFFF">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+                    <TextBlock Text="WinUI 3 custom effect"
+                               HorizontalAlignment="Center"
+                               FontSize="28"
+                               FontWeight="SemiBold" />
+                    <TextBlock x:Name="EffectCaption"
+                               Text="Solid translucent brush"
+                               HorizontalAlignment="Center"
+                               FontSize="16" />
+                </StackPanel>
+            </Grid>
+        </Grid>
+
+        <Canvas x:Name="BackdropHost"
+                Grid.ColumnSpan="2"
+                Background="Transparent">
+            <Border x:Name="BackdropFrame"
+                    Canvas.Left="268"
+                    Canvas.Top="80"
+                    Width="420"
+                    Height="260"
+                    Background="Transparent"
+                    BorderBrush="#FF808080"
+                    BorderThickness="2">
+                <Grid x:Name="BackdropVisualHost"
+                      Background="Transparent" />
+            </Border>
         </Canvas>
 
-        <ProgressRing Width="72"
-                      Height="72"
-                      HorizontalAlignment="Right"
-                      VerticalAlignment="Top"
-                      Margin="0,36,44,0"
-                      IsActive="True"
-                      IsHitTestVisible="False" />
-
-        <Grid HorizontalAlignment="Center"
-              VerticalAlignment="Center"
-              Width="440"
-              Height="220"
-              Background="#CCFFFFFF">
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
-                <TextBlock Text="WinUI 3 custom effect"
-                           HorizontalAlignment="Center"
-                           FontSize="28"
+        <Border Grid.Column="0">
+            <StackPanel Margin="16,24,16,0" Spacing="8">
+                <TextBlock Text="Brush effect"
+                           FontSize="14"
                            FontWeight="SemiBold" />
-                <TextBlock Text="Backdrop color inversion"
-                           HorizontalAlignment="Center"
-                           FontSize="16" />
+                <ComboBox x:Name="EffectSelector"
+                          SelectedIndex="0"
+                          HorizontalAlignment="Stretch">
+                    <ComboBoxItem Content="Solid" />
+                    <ComboBoxItem Content="Blur" />
+                    <ComboBoxItem Content="Invert" />
+                </ComboBox>
+                <TextBlock Text="Border width"
+                           Margin="0,12,0,0"
+                           FontSize="14"
+                           FontWeight="SemiBold" />
+                <Slider x:Name="BorderWidthSlider"
+                        Minimum="0"
+                        Maximum="24"
+                        Value="2"
+                        StepFrequency="1"
+                        TickFrequency="4"
+                        TickPlacement="BottomRight" />
             </StackPanel>
-        </Grid>
+        </Border>
     </Grid>
 </Window>
