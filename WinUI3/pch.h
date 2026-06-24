@@ -10,9 +10,8 @@
 #include <hstring.h>
 #include <tlhelp32.h>
 #include <algorithm>
-#include <atomic>
+#include <cstring>
 #include <mutex>
-#include <unordered_set>
 
 // Undefine GetCurrentTime macro to prevent
 // conflict with Storyboard::GetCurrentTime

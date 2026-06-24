@@ -10,16 +10,19 @@ namespace
 {
     wchar_t const kInvertEffectName[] = L"BackdropInvertEffect";
 
-    constexpr GUID kD2DColorMatrixEffectId{
-        0x921f03d6, 0x641c, 0x47df, { 0x85, 0x2d, 0xb4, 0xbb, 0x61, 0x53, 0xae, 0x11 } };
+    constexpr GUID kCustomInvertEffectId{
+        0x2fd153f9, 0x9c8f, 0x4b68, { 0x95, 0x4d, 0x0f, 0x8b, 0x0c, 0x94, 0xf2, 0x62 } };
 
-    constexpr float kIdentityColorMatrix[20] = {
-        1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 1.0f, 0.0f,
-        0.0f, 0.0f, 0.0f, 1.0f,
-        0.0f, 0.0f, 0.0f, 0.0f,
-    };
+    constexpr uintptr_t kEffectTypeFromGuidRva = 0x17c48;
+    constexpr uintptr_t kEffectTypeTableRva = 0x62150;
+    constexpr uintptr_t kEffectTypeGetBoundsRva = 0x1e040;
+    constexpr uintptr_t kEffectTypeCalcInputBoundsRva = 0x1d700;
+    constexpr size_t kEffectTypeCount = 0x1f;
+    // Reverse engineering shows EffectType virtual calls stop at slot 21
+    // (+0xa8, GetEffectOpacityRelation) in this WinAppSDK build. Slot 22+
+    // is not part of the callable ABI we need to model for the private GUID.
+    constexpr size_t kEffectTypeVtableSlotCount = 22;
+    constexpr size_t kFromGuidPatchSize = 15;
 
     char const kInvertShader[] = R"(
 export float4 PSBody(float4 sample0)
@@ -93,16 +96,12 @@ export float4 PSBody(float4 sample0)
                 return E_POINTER;
             }
 
-            // The v3 write-up describes publishing a private effect id, but WinUI3 rejects
-            // unknown ids while wuceffectsi!CreateEffectDescription is still traversing the
-            // public graph, before CompileEffectDescription can be detoured. We report a
-            // built-in single-input Direct2D effect id here so graph creation can finish.
-            // We intentionally do not use D2D1Invert even though wuceffectsi supports it,
-            // because that would make it impossible to tell whether the visible inversion
-            // came from our custom shader or from the placeholder itself. ColorMatrix is a
-            // neutral, supported placeholder whose payload is replaced by the compile detour.
-            // This is why this code intentionally diverges from the scheme's private-GUID path.
-            *id = kD2DColorMatrixEffectId;
+            // Unknown GUIDs are rejected by wuceffectsi!EffectType::FromGuid before the
+            // compile hook runs. We still publish a private id here because the new
+            // FromGuid detour registers a real EffectType for this GUID; keeping the
+            // identity private is what separates this path from the old ColorMatrix
+            // placeholder workaround.
+            *id = kCustomInvertEffectId;
             return S_OK;
         }
 
@@ -121,7 +120,7 @@ export float4 PSBody(float4 sample0)
                 return E_POINTER;
             }
 
-            *count = 3;
+            *count = 0;
             return S_OK;
         }
 
@@ -133,35 +132,8 @@ export float4 PSBody(float4 sample0)
             }
 
             *value = nullptr;
-            try
-            {
-                Windows::Foundation::IInspectable property{ nullptr };
-                switch (index)
-                {
-                case 0:
-                    property = PropertyValue::CreateSingleArray(kIdentityColorMatrix);
-                    break;
-                case 1:
-                    // wuceffectsi's ColorMatrix metadata expects UInt32 here even though
-                    // the SDK enum is normally written as a signed C++ enum. Returning Int32
-                    // reaches VisitEffectProperty but fails its exact WinRT PropertyType check.
-                    property = PropertyValue::CreateUInt32(1);
-                    break;
-                case 2:
-                    property = PropertyValue::CreateBoolean(false);
-                    break;
-                default:
-                    return E_INVALIDARG;
-                }
-
-                *value = reinterpret_cast<ABI::Windows::Foundation::IPropertyValue*>(
-                    detach_abi(property.as<Windows::Foundation::IPropertyValue>()));
-                return S_OK;
-            }
-            catch (...)
-            {
-                return to_hresult();
-            }
+            UNREFERENCED_PARAMETER(index);
+            return E_INVALIDARG;
         }
 
         HRESULT __stdcall GetSource(
@@ -206,6 +178,224 @@ export float4 PSBody(float4 sample0)
     private:
         hstring m_name{ kInvertEffectName };
     };
+
+    struct CustomEffectType
+    {
+        void** vtable;
+    };
+
+    void* g_customEffectTypeVtable[kEffectTypeVtableSlotCount]{};
+    CustomEffectType g_customEffectType{ g_customEffectTypeVtable };
+
+    bool SameGuid(GUID const& left, GUID const& right)
+    {
+        return left.Data1 == right.Data1 &&
+            left.Data2 == right.Data2 &&
+            left.Data3 == right.Data3 &&
+            memcmp(left.Data4, right.Data4, sizeof(left.Data4)) == 0;
+    }
+
+    char const* __fastcall CustomEffectType_GetShaderFragmentName(CustomEffectType*)
+    {
+        return "CustomInvertEffect";
+    }
+
+    GUID const* __fastcall CustomEffectType_GetGuid(CustomEffectType*)
+    {
+        return &kCustomInvertEffectId;
+    }
+
+    bool __fastcall CustomEffectType_IsValidInputCount(CustomEffectType*, uint32_t sourceCount)
+    {
+        return sourceCount == 1;
+    }
+
+    bool __fastcall CustomEffectType_IsValidInputType(CustomEffectType*, uint32_t inputType)
+    {
+        return inputType != 0;
+    }
+
+    uint32_t __fastcall CustomEffectType_GetPropertiesStructSize(CustomEffectType*)
+    {
+        return 0;
+    }
+
+    uint32_t __fastcall CustomEffectType_GetEffectSamplingBehavior(CustomEffectType*)
+    {
+        return 0;
+    }
+
+    bool __fastcall CustomEffectType_ReturnFalse(CustomEffectType*)
+    {
+        return false;
+    }
+
+    bool __fastcall CustomEffectType_ReturnTrue(CustomEffectType*)
+    {
+        return true;
+    }
+
+    bool __fastcall CustomEffectType_IsInputTransform(CustomEffectType*, uint32_t* mode)
+    {
+        if (mode)
+        {
+            *mode = 0;
+        }
+
+        return false;
+    }
+
+    bool __fastcall CustomEffectType_IsIntersectionCombinator(CustomEffectType*, void const*)
+    {
+        return false;
+    }
+
+    bool __fastcall CustomEffectType_IsNoOp(CustomEffectType*, uint32_t, void const*)
+    {
+        return false;
+    }
+
+    uint32_t __fastcall CustomEffectType_GetEffectOpacityRelation(CustomEffectType*, void const*)
+    {
+        return 0;
+    }
+
+    void __fastcall CustomEffectType_GetPropertiesMetadata(
+        CustomEffectType*,
+        uint32_t* count,
+        void const** metadata)
+    {
+        if (count)
+        {
+            *count = 0;
+        }
+
+        if (metadata)
+        {
+            *metadata = nullptr;
+        }
+    }
+
+    void __fastcall CustomEffectType_Validate(CustomEffectType*, void const*)
+    {
+    }
+
+    void __fastcall CustomEffectType_GenerateCode(
+        CustomEffectType*,
+        void const*,
+        void*,
+        char const*)
+    {
+        // This should not be reached for the custom GUID because CompileEffectDescription
+        // detects our EffectType and returns a CompiledEffect-shaped object directly.
+        // The no-op is only a defensive stub so accidental fallback does not call the
+        // built-in InvertEffectType::GenerateCode and hide whether our shader path ran.
+    }
+
+    void InitializeCustomEffectType(HMODULE wuceffectsi)
+    {
+        auto const base = reinterpret_cast<uint8_t*>(wuceffectsi);
+
+        std::fill(
+            g_customEffectTypeVtable,
+            g_customEffectTypeVtable + kEffectTypeVtableSlotCount,
+            nullptr);
+
+        // This vtable is spelled out instead of cloning InvertEffectType. EffectType
+        // slots are not COM methods, and several folded tiny functions have different
+        // meanings depending on their slot. The 22 entries cover every observed
+        // EffectType virtual call from traversal, flattening, hashing, opacity
+        // propagation, and generator code in this wuceffectsi build. The only native
+        // functions reused here are the neutral EffectType base bounds helpers for slot
+        // 15/16, whose ABI includes struct-return/output-parameter details that this
+        // compile-detour path does not otherwise need to reimplement.
+        g_customEffectTypeVtable[0] = reinterpret_cast<void*>(CustomEffectType_GetShaderFragmentName);
+        g_customEffectTypeVtable[1] = reinterpret_cast<void*>(CustomEffectType_GetGuid);
+        g_customEffectTypeVtable[2] = reinterpret_cast<void*>(CustomEffectType_GetEffectSamplingBehavior);
+        g_customEffectTypeVtable[3] = reinterpret_cast<void*>(CustomEffectType_IsValidInputCount);
+        g_customEffectTypeVtable[4] = reinterpret_cast<void*>(CustomEffectType_IsValidInputType);
+        g_customEffectTypeVtable[5] = reinterpret_cast<void*>(CustomEffectType_ReturnFalse);
+        g_customEffectTypeVtable[6] = reinterpret_cast<void*>(CustomEffectType_IsInputTransform);
+        g_customEffectTypeVtable[7] = reinterpret_cast<void*>(CustomEffectType_ReturnFalse);
+        g_customEffectTypeVtable[8] = reinterpret_cast<void*>(CustomEffectType_ReturnFalse);
+        g_customEffectTypeVtable[9] = reinterpret_cast<void*>(CustomEffectType_ReturnFalse);
+        g_customEffectTypeVtable[10] = reinterpret_cast<void*>(CustomEffectType_ReturnFalse);
+        g_customEffectTypeVtable[11] = reinterpret_cast<void*>(CustomEffectType_ReturnFalse);
+        g_customEffectTypeVtable[12] = reinterpret_cast<void*>(CustomEffectType_ReturnTrue);
+        g_customEffectTypeVtable[13] = reinterpret_cast<void*>(CustomEffectType_IsIntersectionCombinator);
+        g_customEffectTypeVtable[14] = reinterpret_cast<void*>(CustomEffectType_IsNoOp);
+        g_customEffectTypeVtable[15] = base + kEffectTypeGetBoundsRva;
+        g_customEffectTypeVtable[16] = base + kEffectTypeCalcInputBoundsRva;
+        g_customEffectTypeVtable[17] = reinterpret_cast<void*>(CustomEffectType_GetPropertiesStructSize);
+        g_customEffectTypeVtable[18] = reinterpret_cast<void*>(CustomEffectType_GetPropertiesMetadata);
+        g_customEffectTypeVtable[19] = reinterpret_cast<void*>(CustomEffectType_Validate);
+        g_customEffectTypeVtable[20] = reinterpret_cast<void*>(CustomEffectType_GenerateCode);
+        g_customEffectTypeVtable[21] = reinterpret_cast<void*>(CustomEffectType_GetEffectOpacityRelation);
+    }
+
+    void* __fastcall DetourEffectTypeFromGuid(GUID const* guid)
+    {
+        if (guid && SameGuid(*guid, kCustomInvertEffectId))
+        {
+            return &g_customEffectType;
+        }
+
+        auto const module = GetModuleHandleW(L"wuceffectsi.dll");
+        if (!module || !guid)
+        {
+            return nullptr;
+        }
+
+        auto const base = reinterpret_cast<uint8_t*>(module);
+        auto* table = reinterpret_cast<void**>(base + kEffectTypeTableRva);
+        for (size_t index = 0; index < kEffectTypeCount; ++index)
+        {
+            auto* effectType = table[index];
+            if (!effectType)
+            {
+                continue;
+            }
+
+            auto* vtable = *reinterpret_cast<void***>(effectType);
+            auto const getGuid = reinterpret_cast<GUID const*(__fastcall*)(void*)>(vtable[1]);
+            auto const knownGuid = getGuid(effectType);
+            if (knownGuid && SameGuid(*knownGuid, *guid))
+            {
+                return effectType;
+            }
+        }
+
+        return nullptr;
+    }
+
+    void PatchEffectTypeFromGuid(HMODULE wuceffectsi)
+    {
+        auto* target = reinterpret_cast<uint8_t*>(wuceffectsi) + kEffectTypeFromGuidRva;
+        uint8_t const expected[kFromGuidPatchSize] = {
+            0x48, 0x89, 0x5c, 0x24, 0x08,
+            0x48, 0x89, 0x74, 0x24, 0x10,
+            0x48, 0x89, 0x7c, 0x24, 0x18,
+        };
+
+        if (memcmp(target, expected, sizeof(expected)) != 0)
+        {
+            check_hresult(HRESULT_FROM_WIN32(ERROR_REVISION_MISMATCH));
+        }
+
+        uint8_t patch[kFromGuidPatchSize] = {
+            0x48, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0,
+            0xff, 0xe0,
+            0x90, 0x90, 0x90,
+        };
+        *reinterpret_cast<void**>(patch + 2) = reinterpret_cast<void*>(DetourEffectTypeFromGuid);
+
+        DWORD oldProtect{};
+        check_bool(VirtualProtect(target, sizeof(patch), PAGE_EXECUTE_READWRITE, &oldProtect));
+        memcpy(target, patch, sizeof(patch));
+        FlushInstructionCache(GetCurrentProcess(), target, sizeof(patch));
+        DWORD unused{};
+        VirtualProtect(target, sizeof(patch), oldProtect, &unused);
+    }
 
     struct ShaderLinkingBody
     {
@@ -505,14 +695,9 @@ export float4 PSBody(float4 sample0)
     }
 
     using CompileEffectDescriptionFn = HRESULT(__fastcall*)(void*, void**);
-    using CreateEffectDescriptionFn = HRESULT(__fastcall*)(void*, void*, void**);
 
-    CreateEffectDescriptionFn g_originalCreateEffectDescription{};
     CompileEffectDescriptionFn g_originalCompileEffectDescription{};
     std::once_flag g_hookOnce;
-    std::mutex g_descriptionMutex;
-    std::unordered_set<void*> g_invertDescriptions;
-    std::atomic_uint g_pendingInvertCompiles{};
 
     struct ImportPatch
     {
@@ -521,91 +706,51 @@ export float4 PSBody(float4 sample0)
         void* replacement;
     };
 
-    bool ShouldCompileAsCustomInvert(void* description)
+    bool GraphContainsCustomEffectType(void* description)
     {
         if (!description)
         {
             return false;
         }
 
+        // CompileEffectDescription receives the IEffectDescriptionWithNames interface
+        // pointer at FlattenedEffectGraph + 0x10, not the object base. Reversing the
+        // export showed it subtracts 0x10 before invoking EffectGenerator::Compile, so
+        // the detour must do the same when it inspects the node vector. This replaces the
+        // earlier pending-counter workaround and keeps recognition tied to our private
+        // EffectType identity.
+        auto* graph = static_cast<uint8_t*>(description) - 0x10;
+        auto* nodeBegin = *reinterpret_cast<void***>(graph + 0x30);
+        auto* nodeEnd = *reinterpret_cast<void***>(graph + 0x38);
+        auto const beginAddress = reinterpret_cast<uintptr_t>(nodeBegin);
+        auto const endAddress = reinterpret_cast<uintptr_t>(nodeEnd);
+        if (!nodeBegin || !nodeEnd || endAddress < beginAddress)
         {
-            std::lock_guard guard{ g_descriptionMutex };
-            if (g_invertDescriptions.find(description) != g_invertDescriptions.end())
-            {
-                return true;
-            }
+            return false;
         }
 
-        // CreateEffectDescription and CompileEffectDescription do not receive the same
-        // object identity in WinUI3: Create returns one interface pointer, then wuceffectsi
-        // flattens/repackages that graph before compile. In this code-only demo the custom
-        // effect factory is created immediately after our InvertEffect is recognized, so the
-        // narrow association is to consume exactly the next compile request instead of
-        // pretending the two internal pointers are comparable.
-        auto pending = g_pendingInvertCompiles.load(std::memory_order_acquire);
-        while (pending != 0)
+        auto const nodeBytes = endAddress - beginAddress;
+        if ((nodeBytes % sizeof(void*)) != 0)
         {
-            if (g_pendingInvertCompiles.compare_exchange_weak(
-                pending,
-                pending - 1,
-                std::memory_order_acq_rel,
-                std::memory_order_acquire))
+            return false;
+        }
+
+        auto const nodeCount = nodeBytes / sizeof(void*);
+        if (nodeCount > 0x19)
+        {
+            return false;
+        }
+
+        for (auto** current = nodeBegin; current != nodeEnd; ++current)
+        {
+            auto* node = *current;
+            if (node && *reinterpret_cast<void**>(node) == &g_customEffectType)
             {
                 return true;
             }
         }
 
         return false;
-    }
-
-    bool IsOurEffect(void* effect)
-    {
-        if (!effect)
-        {
-            return false;
-        }
-
-        HSTRING name{};
-        bool matches = false;
-        auto const vtable = *reinterpret_cast<void***>(effect);
-        auto const getName = reinterpret_cast<HRESULT(__fastcall*)(void*, HSTRING*)>(vtable[6]);
-        if (SUCCEEDED(getName(effect, &name)) && name)
-        {
-            uint32_t length{};
-            auto const value = WindowsGetStringRawBuffer(name, &length);
-            matches = length == ARRAYSIZE(kInvertEffectName) - 1 &&
-                wmemcmp(value, kInvertEffectName, length) == 0;
-        }
-
-        if (name)
-        {
-            WindowsDeleteString(name);
-        }
-        return matches;
-    }
-
-    HRESULT __fastcall DetourCreateEffectDescription(void* effect, void* animatableProperties, void** result)
-    {
-        if (!result)
-        {
-            return E_POINTER;
-        }
-
-        // This extra detour is deliberately earlier than the v3 document's compile hook.
-        // WinUI3 validates the effect GUID while building the description, so an unknown
-        // custom id fails with "Unsupported effect type" before CompileEffectDescription is
-        // reached. Recording the description here gives the later compile detour a stable
-        // way to recognize only this placeholder-backed custom effect.
-        auto const isOurs = IsOurEffect(effect);
-        auto const hr = g_originalCreateEffectDescription(effect, animatableProperties, result);
-        if (SUCCEEDED(hr) && isOurs && *result)
-        {
-            std::lock_guard guard{ g_descriptionMutex };
-            g_invertDescriptions.insert(*result);
-            g_pendingInvertCompiles.fetch_add(1, std::memory_order_release);
-        }
-
-        return hr;
     }
 
     HRESULT __fastcall DetourCompileEffectDescription(void* description, void** result)
@@ -615,7 +760,7 @@ export float4 PSBody(float4 sample0)
             return E_POINTER;
         }
 
-        if (ShouldCompileAsCustomInvert(description))
+        if (GraphContainsCustomEffectType(description))
         {
             try
             {
@@ -779,23 +924,17 @@ export float4 PSBody(float4 sample0)
             auto original = reinterpret_cast<CompileEffectDescriptionFn>(
                 GetProcAddress(module, "CompileEffectDescription"));
             check_pointer(original);
-            auto originalCreate = reinterpret_cast<CreateEffectDescriptionFn>(
-                GetProcAddress(module, "CreateEffectDescription"));
-            check_pointer(originalCreate);
 
             g_originalCompileEffectDescription = original;
-            g_originalCreateEffectDescription = originalCreate;
+
+            InitializeCustomEffectType(module);
+            PatchEffectTypeFromGuid(module);
 
             ImportPatch const patches[] = {
                 {
                     "CompileEffectDescription",
                     reinterpret_cast<void*>(original),
                     reinterpret_cast<void*>(DetourCompileEffectDescription),
-                },
-                {
-                    "CreateEffectDescription",
-                    reinterpret_cast<void*>(originalCreate),
-                    reinterpret_cast<void*>(DetourCreateEffectDescription),
                 },
             };
 
