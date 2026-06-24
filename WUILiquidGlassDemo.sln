@@ -3,9 +3,11 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.8.34408.163
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{B4AE220B-26E9-47D5-A6CE-09215B8E43B5}") = "WUILiquidGlassDemo", "WinUI2\WUILiquidGlassDemo.vcxproj", "{EC642A4A-FB5A-4D49-BA12-9EB3C79D1D87}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "WUILiquidGlassDemo", "WinUI2\WUILiquidGlassDemo.vcxproj", "{EC642A4A-FB5A-4D49-BA12-9EB3C79D1D87}"
 EndProject
-Project("{B4AE220B-26E9-47D5-A6CE-09215B8E43B5}") = "WUILiquidGlassDemo.Win32", "WinUI2\WUILiquidGlassDemo.Win32.vcxproj", "{FDA7DD16-34D0-4852-B486-F20E4C283784}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "WUILiquidGlassDemo.Win32", "WinUI2\WUILiquidGlassDemo.Win32.vcxproj", "{FDA7DD16-34D0-4852-B486-F20E4C283784}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "WUILiquidGlassDemo.WUI3", "WinUI3\WUILiquidGlassDemo.WUI3.vcxproj", "{E869ED28-1BA6-42D2-A0D8-D9F162D77987}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -57,6 +59,30 @@ Global
 		{FDA7DD16-34D0-4852-B486-F20E4C283784}.Release|x64.Build.0 = Release|x64
 		{FDA7DD16-34D0-4852-B486-F20E4C283784}.Release|x86.ActiveCfg = Release|Win32
 		{FDA7DD16-34D0-4852-B486-F20E4C283784}.Release|x86.Build.0 = Release|Win32
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Debug|ARM.ActiveCfg = Debug|x64
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Debug|ARM.Build.0 = Debug|x64
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Debug|ARM.Deploy.0 = Debug|x64
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Debug|ARM64.ActiveCfg = Debug|ARM64
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Debug|ARM64.Build.0 = Debug|ARM64
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Debug|ARM64.Deploy.0 = Debug|ARM64
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Debug|x64.ActiveCfg = Debug|x64
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Debug|x64.Build.0 = Debug|x64
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Debug|x64.Deploy.0 = Debug|x64
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Debug|x86.ActiveCfg = Debug|Win32
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Debug|x86.Build.0 = Debug|Win32
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Debug|x86.Deploy.0 = Debug|Win32
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Release|ARM.ActiveCfg = Release|x64
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Release|ARM.Build.0 = Release|x64
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Release|ARM.Deploy.0 = Release|x64
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Release|ARM64.ActiveCfg = Release|ARM64
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Release|ARM64.Build.0 = Release|ARM64
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Release|ARM64.Deploy.0 = Release|ARM64
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Release|x64.ActiveCfg = Release|x64
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Release|x64.Build.0 = Release|x64
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Release|x64.Deploy.0 = Release|x64
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Release|x86.ActiveCfg = Release|Win32
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Release|x86.Build.0 = Release|Win32
+		{E869ED28-1BA6-42D2-A0D8-D9F162D77987}.Release|x86.Deploy.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
