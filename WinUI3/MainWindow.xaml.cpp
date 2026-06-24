@@ -163,13 +163,23 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         switch (m_backdropEffect)
         {
         case BackdropEffectKind::Invert:
-            m_backdropVisual.Brush(CustomInvertEffect::CreateBackdropBrush(compositor));
+        {
+            auto factory = compositor.CreateEffectFactory(CustomInvertEffect::CreateEffect());
+            auto brush = factory.CreateBrush();
+            brush.SetSourceParameter(L"Backdrop", compositor.CreateBackdropBrush());
+            m_backdropVisual.Brush(brush);
             EffectCaption().Text(L"Backdrop inversion");
             break;
+        }
         case BackdropEffectKind::Blur:
-            m_backdropVisual.Brush(CustomBlurEffect::CreateBackdropBrush(compositor));
+        {
+            auto factory = compositor.CreateEffectFactory(CustomBlurEffect::CreateEffect());
+            auto brush = factory.CreateBrush();
+            brush.SetSourceParameter(L"Backdrop", compositor.CreateBackdropBrush());
+            m_backdropVisual.Brush(brush);
             EffectCaption().Text(L"Backdrop blur");
             break;
+        }
         case BackdropEffectKind::Solid:
         default:
             m_backdropVisual.Brush(compositor.CreateColorBrush(winrt::Windows::UI::Color{ 0x99, 0xff, 0xff, 0xff }));

@@ -1105,29 +1105,15 @@ namespace CustomEffectRuntime
         g_effects = entry;
     }
 
-    CompositionEffectBrush CreateBackdropBrush(
-        Compositor const& compositor,
-        CustomEffectDefinition const& definition)
+    IGraphicsEffect CreateEffect(CustomEffectDefinition const& definition)
     {
-        // Keep this code-only inside the WinUI3 project instead of adding a custom WinMain:
-        // Windows App SDK initialization and the generated XAML entry point stay untouched,
-        // while this still runs before CreateEffectFactory enters dwmcorei/wuceffectsi.
+        // The public shape must be the same shape WinUI expects from built-in effects:
+        // an IGraphicsEffect that can be passed directly to Compositor::CreateEffectFactory.
+        // Registration and hook installation live here only to make that object usable
+        // before wuceffectsi resolves its private EffectType GUID.
         RegisterEffect(definition);
         InstallHook();
-
-        auto effect = make<RuntimeGraphicsEffect>(&definition);
-        auto factory = compositor.CreateEffectFactory(effect);
-        auto brush = factory.CreateBrush();
-
-        for (uint32_t index = 0; index < definition.sourceCount; ++index)
-        {
-            auto const& source = definition.sources[index];
-            if (source.kind == SourceKind::Backdrop)
-            {
-                brush.SetSourceParameter(source.name, compositor.CreateBackdropBrush());
-            }
-        }
-
-        return brush;
+        return make<RuntimeGraphicsEffect>(&definition);
     }
+
 }

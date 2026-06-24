@@ -3,7 +3,6 @@
 #include "CustomEffectRuntime.h"
 
 using namespace winrt;
-using namespace Microsoft::UI::Composition;
 
 namespace
 {
@@ -54,12 +53,13 @@ export float4 PSBody(float4 sample0)
 
 namespace CustomInvertEffect
 {
-    CompositionEffectBrush CreateBackdropBrush(Compositor const& compositor)
+    winrt::Windows::Graphics::Effects::IGraphicsEffect CreateEffect()
     {
         // This remains a private EffectType even though it uses the generated-effect
-        // color argument ABI (0x0200). The divergence from a Texture2D shader is
-        // intentional: this path proves the runtime can host a color-input effect
-        // without masquerading as a built-in ColorMatrix/Invert effect.
-        return CustomEffectRuntime::CreateBackdropBrush(compositor, kDefinition);
+        // color argument ABI (0x0200). Returning IGraphicsEffect keeps the public
+        // shape compatible with Compositor::CreateEffectFactory while still proving
+        // this path is not masquerading as a built-in ColorMatrix/Invert effect.
+        return CustomEffectRuntime::CreateEffect(kDefinition);
     }
+
 }

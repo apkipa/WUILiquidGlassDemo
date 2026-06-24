@@ -51,7 +51,6 @@ namespace CustomEffectRuntime
 
     void RegisterEffect(CustomEffectDefinition const& definition);
 
-    winrt::Microsoft::UI::Composition::CompositionEffectBrush CreateBackdropBrush(
-        winrt::Microsoft::UI::Composition::Compositor const& compositor,
+    winrt::Windows::Graphics::Effects::IGraphicsEffect CreateEffect(
         CustomEffectDefinition const& definition);
 }

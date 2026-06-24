@@ -3,7 +3,6 @@
 #include "CustomEffectRuntime.h"
 
 using namespace winrt;
-using namespace Microsoft::UI::Composition;
 
 namespace
 {
@@ -85,12 +84,15 @@ export float4 PSBodyM(float2 uv) { return BlurCore(uv); }
 
 namespace CustomBlurEffect
 {
-    CompositionEffectBrush CreateBackdropBrush(Compositor const& compositor)
+    winrt::Windows::Graphics::Effects::IGraphicsEffect CreateEffect()
     {
         // This definition deliberately takes the CCustomKernelEffect-style custom
         // sampler route: argument 0x0100 gives PSBody a UV, while linkingArgType
-        // 0x0200 asks dwmcorei to bind texture0/sampler0. That is the minimal blur
-        // path and not the earlier color-only generated-effect model.
-        return CustomEffectRuntime::CreateBackdropBrush(compositor, kDefinition);
+        // 0x0200 asks dwmcorei to bind texture0/sampler0. Returning an
+        // IGraphicsEffect here keeps the public shape compatible with
+        // Compositor::CreateEffectFactory instead of hiding the graph inside a brush
+        // helper.
+        return CustomEffectRuntime::CreateEffect(kDefinition);
     }
+
 }
