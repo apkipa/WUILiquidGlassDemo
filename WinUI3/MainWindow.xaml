@@ -9,7 +9,162 @@
     mc:Ignorable="d"
     Title="WUILiquidGlassDemo.WUI3">
 
-    <Grid>
-        <TextBlock Text="Hello, World!" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="24" />
+    <Grid x:Name="Root" Background="Transparent">
+        <Grid.Resources>
+            <Storyboard x:Key="DynamicSceneStoryboard" RepeatBehavior="Forever">
+                <DoubleAnimation Storyboard.TargetName="RedOrb"
+                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(CompositeTransform.TranslateX)"
+                                 From="-120"
+                                 To="520"
+                                 Duration="0:0:8"
+                                 AutoReverse="True"
+                                 EnableDependentAnimation="True" />
+                <DoubleAnimation Storyboard.TargetName="RedOrb"
+                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(CompositeTransform.TranslateY)"
+                                 From="0"
+                                 To="90"
+                                 Duration="0:0:5"
+                                 AutoReverse="True"
+                                 EnableDependentAnimation="True" />
+                <DoubleAnimation Storyboard.TargetName="CyanOrb"
+                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(CompositeTransform.TranslateX)"
+                                 From="420"
+                                 To="-160"
+                                 Duration="0:0:10"
+                                 AutoReverse="True"
+                                 EnableDependentAnimation="True" />
+                <DoubleAnimation Storyboard.TargetName="CyanOrb"
+                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(CompositeTransform.TranslateY)"
+                                 From="0"
+                                 To="-120"
+                                 Duration="0:0:6"
+                                 AutoReverse="True"
+                                 EnableDependentAnimation="True" />
+                <DoubleAnimation Storyboard.TargetName="GoldBar"
+                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(CompositeTransform.TranslateX)"
+                                 From="-260"
+                                 To="260"
+                                 Duration="0:0:7"
+                                 AutoReverse="True"
+                                 EnableDependentAnimation="True" />
+                <DoubleAnimation Storyboard.TargetName="BlueBar"
+                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(CompositeTransform.TranslateX)"
+                                 From="260"
+                                 To="-260"
+                                 Duration="0:0:9"
+                                 AutoReverse="True"
+                                 EnableDependentAnimation="True" />
+                <DoubleAnimation Storyboard.TargetName="PulseRing"
+                                 Storyboard.TargetProperty="Opacity"
+                                 From="0.25"
+                                 To="0.95"
+                                 Duration="0:0:2.2"
+                                 AutoReverse="True" />
+                <DoubleAnimation Storyboard.TargetName="PulseRing"
+                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(CompositeTransform.ScaleX)"
+                                 From="0.82"
+                                 To="1.18"
+                                 Duration="0:0:2.2"
+                                 AutoReverse="True"
+                                 EnableDependentAnimation="True" />
+                <DoubleAnimation Storyboard.TargetName="PulseRing"
+                                 Storyboard.TargetProperty="(UIElement.RenderTransform).(CompositeTransform.ScaleY)"
+                                 From="0.82"
+                                 To="1.18"
+                                 Duration="0:0:2.2"
+                                 AutoReverse="True"
+                                 EnableDependentAnimation="True" />
+            </Storyboard>
+        </Grid.Resources>
+
+        <Canvas IsHitTestVisible="False">
+            <Ellipse x:Name="RedOrb"
+                     Width="170"
+                     Height="170"
+                     Canvas.Left="72"
+                     Canvas.Top="54"
+                     Fill="#FFE94B5F"
+                     Opacity="0.95">
+                <Ellipse.RenderTransform>
+                    <CompositeTransform />
+                </Ellipse.RenderTransform>
+            </Ellipse>
+
+            <Ellipse x:Name="CyanOrb"
+                     Width="220"
+                     Height="220"
+                     Canvas.Left="430"
+                     Canvas.Top="245"
+                     Fill="#FF21C7C9"
+                     Opacity="0.9">
+                <Ellipse.RenderTransform>
+                    <CompositeTransform />
+                </Ellipse.RenderTransform>
+            </Ellipse>
+
+            <Rectangle x:Name="GoldBar"
+                       Width="760"
+                       Height="44"
+                       Canvas.Left="-160"
+                       Canvas.Top="185"
+                       Fill="#FFF2C94C"
+                       Opacity="0.9"
+                       RenderTransformOrigin="0.5,0.5">
+                <Rectangle.RenderTransform>
+                    <CompositeTransform Rotation="-13" />
+                </Rectangle.RenderTransform>
+            </Rectangle>
+
+            <Rectangle x:Name="BlueBar"
+                       Width="820"
+                       Height="36"
+                       Canvas.Left="90"
+                       Canvas.Top="420"
+                       Fill="#FF5A7CFF"
+                       Opacity="0.78"
+                       RenderTransformOrigin="0.5,0.5">
+                <Rectangle.RenderTransform>
+                    <CompositeTransform Rotation="9" />
+                </Rectangle.RenderTransform>
+            </Rectangle>
+
+            <Ellipse x:Name="PulseRing"
+                     Width="260"
+                     Height="260"
+                     Canvas.Left="245"
+                     Canvas.Top="88"
+                     Stroke="#FFE36BFF"
+                     StrokeThickness="18"
+                     Opacity="0.45"
+                     RenderTransformOrigin="0.5,0.5">
+                <Ellipse.RenderTransform>
+                    <CompositeTransform />
+                </Ellipse.RenderTransform>
+            </Ellipse>
+        </Canvas>
+
+        <ProgressRing Width="72"
+                      Height="72"
+                      HorizontalAlignment="Right"
+                      VerticalAlignment="Top"
+                      Margin="0,36,44,0"
+                      IsActive="True"
+                      IsHitTestVisible="False" />
+
+        <Grid HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              Width="440"
+              Height="220"
+              Background="#CCFFFFFF">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+                <TextBlock Text="WinUI 3 custom effect"
+                           HorizontalAlignment="Center"
+                           FontSize="28"
+                           FontWeight="SemiBold" />
+                <TextBlock Text="Backdrop color inversion"
+                           HorizontalAlignment="Center"
+                           FontSize="16" />
+            </StackPanel>
+        </Grid>
     </Grid>
 </Window>

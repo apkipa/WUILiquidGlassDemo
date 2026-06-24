@@ -12,9 +12,15 @@
   <ItemGroup>
     <ClCompile Include="pch.cpp" />
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
+    <ClCompile Include="CustomInvertEffect.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
+    <ClInclude Include="CustomInvertEffect.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Image Include="Assets\Wide310x150Logo.scale-200.png">
@@ -42,6 +48,12 @@
   <ItemGroup>
     <Filter Include="Assets">
       <UniqueIdentifier>{e869ed28-1ba6-42d2-a0d8-d9f162d77987}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{2ce6c9c9-3583-4f95-b86b-ce0899efa2ee}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{823d2447-90eb-4cc9-90b6-184067bfb368}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
