@@ -67,6 +67,13 @@ namespace
 
     static_assert(sizeof(InputBinding) == 8);
 
+    struct SurfaceData
+    {
+        uint8_t data[4];
+    };
+
+    static_assert(sizeof(SurfaceData) == 4);
+
     struct CompiledSubgraph
     {
         uint32_t flags;
@@ -435,6 +442,11 @@ namespace
                 {
                     HeapFree(GetProcessHeap(), 0, subgraph->constantBufferInitialBegin);
                 }
+
+                if (subgraph->surfaceDataBegin)
+                {
+                    HeapFree(GetProcessHeap(), 0, subgraph->surfaceDataBegin);
+                }
             }
 
             HeapFree(GetProcessHeap(), 0, self->subgraphBegin);
@@ -533,9 +545,28 @@ namespace
         return false;
     }
 
-    bool __fastcall Wrapper_IsSamplerDataExtRequired(CompiledResult*, uint32_t, uint32_t)
+    bool __fastcall Wrapper_IsSamplerDataExtRequired(
+        CompiledResult* self,
+        uint32_t subgraphIndex,
+        uint32_t inputIndex)
     {
-        return false;
+        auto* subgraphBegin = self->subgraphBegin;
+        auto* subgraphEnd = self->subgraphEnd;
+        if (!subgraphBegin || !subgraphEnd || subgraphIndex >= static_cast<uint32_t>(subgraphEnd - subgraphBegin))
+        {
+            return false;
+        }
+
+        auto const& subgraph = subgraphBegin[subgraphIndex];
+        auto* surfaceDataBegin = static_cast<SurfaceData*>(subgraph.surfaceDataBegin);
+        auto* surfaceDataEnd = static_cast<SurfaceData*>(subgraph.surfaceDataEnd);
+        if (!surfaceDataBegin || !surfaceDataEnd ||
+            inputIndex >= static_cast<uint32_t>(surfaceDataEnd - surfaceDataBegin))
+        {
+            return false;
+        }
+
+        return surfaceDataBegin[inputIndex].data[3] != 0;
     }
 
     uint32_t __fastcall Wrapper_GetConstantBufferSize(CompiledResult* self, uint32_t)
@@ -631,15 +662,29 @@ namespace
             {
                 auto* inputBindings = static_cast<InputBinding*>(
                     AllocateBytes(sizeof(InputBinding) * definition.sourceCount));
+                auto* surfaceData = static_cast<SurfaceData*>(
+                    AllocateBytes(sizeof(SurfaceData) * definition.sourceCount));
                 for (uint32_t index = 0; index < definition.sourceCount; ++index)
                 {
                     inputBindings[index].inputIndex = index;
                     inputBindings[index].isSubgraphOutput = false;
+
+                    // wuceffectsi copies EffectGenerator::SurfaceData bytes 4..7 into
+                    // CompiledEffectSubgraph::SurfaceData, and dwmcorei reads byte 3
+                    // through IsSamplerDataExtRequired before it decides whether to emit
+                    // GetSamplerDataExtN. The code-only path bypasses that generator, so
+                    // we synthesize only the byte required to request DWM's native
+                    // sampler-size row instead of adding public width/height properties.
+                    surfaceData[index].data[3] = definition.sources[index].requiresSamplerDataExt ? 1 : 0;
                 }
 
                 subgraph->inputBindingBegin = inputBindings;
                 subgraph->inputBindingEnd = inputBindings + definition.sourceCount;
                 subgraph->inputBindingCapacity = inputBindings + definition.sourceCount;
+
+                subgraph->surfaceDataBegin = surfaceData;
+                subgraph->surfaceDataEnd = surfaceData + definition.sourceCount;
+                subgraph->surfaceDataCapacity = surfaceData + definition.sourceCount;
             }
 
             if (definition.shaderArgumentCount)

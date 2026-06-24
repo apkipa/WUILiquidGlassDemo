@@ -11,6 +11,7 @@ namespace CustomEffectRuntime
     {
         wchar_t const* name;
         SourceKind kind;
+        bool requiresSamplerDataExt;
     };
 
     struct PropertyDescriptor

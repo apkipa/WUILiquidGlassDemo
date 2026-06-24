@@ -21,7 +21,7 @@ export float4 PSBody(float4 sample0)
     constexpr uint16_t kBackdropSampleArgument = 0x0200;
 
     CustomEffectRuntime::SourceDescriptor const kSources[] = {
-        { L"Backdrop", CustomEffectRuntime::SourceKind::Backdrop },
+        { L"Backdrop", CustomEffectRuntime::SourceKind::Backdrop, false },
     };
 
     uint16_t const kShaderArguments[] = {
