@@ -11,9 +11,10 @@ using namespace Windows::Foundation;
 using namespace Microsoft::UI::Composition;
 using namespace Microsoft::UI::Input;
 using namespace Microsoft::UI::Xaml;
-using namespace Microsoft::UI::Xaml::Hosting;
 using namespace Microsoft::UI::Xaml::Input;
 using namespace Microsoft::UI::Xaml::Media::Animation;
+
+namespace Media = winrt::Microsoft::UI::Xaml::Media;
 
 namespace
 {
@@ -45,12 +46,9 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         BackdropFrame().Width(kInitialBackdropWidth);
         BackdropFrame().Height(kInitialBackdropHeight);
 
-        auto compositor = ElementCompositionPreview::GetElementVisual(BackdropVisualHost()).Compositor();
-        m_backdropVisual = compositor.CreateSpriteVisual();
+        InitializeBackdropBrush();
         ApplyBackdropEffect();
-        UpdateBackdropVisualSize();
 
-        ElementCompositionPreview::SetElementChildVisual(BackdropVisualHost(), m_backdropVisual);
         EffectSelector().SelectionChanged([weak = get_weak()](
             IInspectable const& sender,
             Controls::SelectionChangedEventArgs const& args)
@@ -73,7 +71,7 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         {
             if (auto self = weak.get())
             {
-                self->ClampBackdropVisualRect();
+                self->ClampBackdropFrameRect();
             }
         });
         BackdropHost().Loaded([weak = get_weak()](auto&&, auto&&)
@@ -139,7 +137,7 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
             }
         });
 
-        ClampBackdropVisualRect();
+        ClampBackdropFrameRect();
     }
 
     void MainWindow::StartDynamicScene()
@@ -152,14 +150,26 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         }
     }
 
+    void MainWindow::InitializeBackdropBrush()
+    {
+        auto const factory = get_activation_factory<
+            Media::XamlCompositionBrushBase,
+            Windows::Foundation::IActivationFactory>();
+
+        m_backdropXamlBrush = factory.ActivateInstance<Media::XamlCompositionBrushBase>();
+        m_backdropBrushProtected = m_backdropXamlBrush.as<Media::IXamlCompositionBrushBaseProtected>();
+        m_backdropXamlBrush.FallbackColor(winrt::Windows::UI::Color{ 0x99, 0xff, 0xff, 0xff });
+        BackdropFrame().Background(m_backdropXamlBrush.as<Media::Brush>());
+    }
+
     void MainWindow::ApplyBackdropEffect()
     {
-        if (!m_backdropVisual)
+        if (!m_backdropBrushProtected)
         {
             return;
         }
 
-        auto const compositor = ElementCompositionPreview::GetElementVisual(BackdropVisualHost()).Compositor();
+        auto const compositor = Media::CompositionTarget::GetCompositorForCurrentThread();
         switch (m_backdropEffect)
         {
         case BackdropEffectKind::Invert:
@@ -167,7 +177,7 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
             auto factory = compositor.CreateEffectFactory(CustomInvertEffect::CreateEffect());
             auto brush = factory.CreateBrush();
             brush.SetSourceParameter(L"Backdrop", compositor.CreateBackdropBrush());
-            m_backdropVisual.Brush(brush);
+            m_backdropBrushProtected.CompositionBrush(brush);
             EffectCaption().Text(L"Backdrop inversion");
             break;
         }
@@ -176,38 +186,21 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
             auto factory = compositor.CreateEffectFactory(CustomBlurEffect::CreateEffect());
             auto brush = factory.CreateBrush();
             brush.SetSourceParameter(L"Backdrop", compositor.CreateBackdropBrush());
-            m_backdropVisual.Brush(brush);
+            m_backdropBrushProtected.CompositionBrush(brush);
             EffectCaption().Text(L"Backdrop blur");
             break;
         }
         case BackdropEffectKind::Solid:
         default:
-            m_backdropVisual.Brush(compositor.CreateColorBrush(winrt::Windows::UI::Color{ 0x99, 0xff, 0xff, 0xff }));
+            m_backdropBrushProtected.CompositionBrush(
+                compositor.CreateColorBrush(winrt::Windows::UI::Color{ 0x99, 0xff, 0xff, 0xff }));
             EffectCaption().Text(L"Solid translucent brush");
             break;
         }
     }
 
-    void MainWindow::UpdateBackdropVisualSize()
+    void MainWindow::ClampBackdropFrameRect()
     {
-        if (!m_backdropVisual)
-        {
-            return;
-        }
-
-        auto const innerWidth = std::max(0.0f, static_cast<float>(BackdropFrame().Width()) - (m_borderWidth * 2.0f));
-        auto const innerHeight = std::max(0.0f, static_cast<float>(BackdropFrame().Height()) - (m_borderWidth * 2.0f));
-        m_backdropVisual.Offset({ 0.0f, 0.0f, 0.0f });
-        m_backdropVisual.Size({ innerWidth, innerHeight });
-    }
-
-    void MainWindow::ClampBackdropVisualRect()
-    {
-        if (!m_backdropVisual)
-        {
-            return;
-        }
-
         auto const rootWidth = static_cast<float>(BackdropHost().ActualWidth());
         auto const rootHeight = static_cast<float>(BackdropHost().ActualHeight());
         if (rootWidth <= 0.0f || rootHeight <= 0.0f)
@@ -236,16 +229,10 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         BackdropFrame().Height(height);
         Controls::Canvas::SetLeft(BackdropFrame(), x);
         Controls::Canvas::SetTop(BackdropFrame(), y);
-        UpdateBackdropVisualSize();
     }
 
-    bool MainWindow::HitTestBackdropVisual(Point const& position)
+    bool MainWindow::HitTestBackdropFrame(Point const& position)
     {
-        if (!m_backdropVisual)
-        {
-            return false;
-        }
-
         auto const x = static_cast<float>(Controls::Canvas::GetLeft(BackdropFrame()));
         auto const y = static_cast<float>(Controls::Canvas::GetTop(BackdropFrame()));
         auto const width = static_cast<float>(BackdropFrame().Width());
@@ -258,7 +245,7 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
 
     bool MainWindow::HitTestResizeGrip(Point const& position)
     {
-        if (!m_backdropVisual || !HitTestBackdropVisual(position))
+        if (!HitTestBackdropFrame(position))
         {
             return false;
         }
@@ -313,9 +300,9 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
             protectedHost.ProtectedCursor(cursor);
         }
 
-        // SpriteVisual is not a XAML element, so setting the cursor only through
-        // UIElement.ProtectedCursor can be lost when XAML children are hit-tested.
-        // Updating the island input source keeps this code-only visual path intact.
+        // BackdropHost sits above regular XAML content, while pointer capture is
+        // managed manually for drag/resize; setting the island cursor keeps the
+        // cursor stable across those hit-test transitions.
         EnsurePointerSource();
         if (m_pointerSource)
         {
@@ -331,7 +318,7 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
             return;
         }
 
-        if (m_backdropInteraction == BackdropInteraction::Drag || HitTestBackdropVisual(position))
+        if (m_backdropInteraction == BackdropInteraction::Drag || HitTestBackdropFrame(position))
         {
             SetBackdropCursor(m_moveCursor);
             return;
@@ -342,15 +329,9 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
 
     void MainWindow::OnBackdropHostPointerPressed(IInspectable const&, PointerRoutedEventArgs const& args)
     {
-        if (!m_backdropVisual)
-        {
-            SetBackdropCursor(m_arrowCursor);
-            return;
-        }
-
         auto const point = args.GetCurrentPoint(BackdropHost());
         auto const position = point.Position();
-        if (!HitTestBackdropVisual(position))
+        if (!HitTestBackdropFrame(position))
         {
             SetBackdropCursor(m_arrowCursor);
             return;
@@ -375,11 +356,6 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
     {
         auto const point = args.GetCurrentPoint(BackdropHost());
         auto const position = point.Position();
-        if (!m_backdropVisual)
-        {
-            SetBackdropCursor(m_arrowCursor);
-            return;
-        }
 
         if (m_backdropInteraction == BackdropInteraction::None)
         {
@@ -404,7 +380,6 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
             auto const maxHeight = std::max(kMinimumBackdropHeight, rootHeight - m_startOffsetY);
             BackdropFrame().Width(std::clamp(m_startWidth + deltaX, kMinimumBackdropWidth, maxWidth));
             BackdropFrame().Height(std::clamp(m_startHeight + deltaY, kMinimumBackdropHeight, maxHeight));
-            UpdateBackdropVisualSize();
         }
         else
         {
@@ -483,7 +458,6 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
     {
         m_borderWidth = static_cast<float>(args.NewValue());
         BackdropFrame().BorderThickness({ m_borderWidth, m_borderWidth, m_borderWidth, m_borderWidth });
-        UpdateBackdropVisualSize();
     }
 
     void MainWindow::EndBackdropInteraction()

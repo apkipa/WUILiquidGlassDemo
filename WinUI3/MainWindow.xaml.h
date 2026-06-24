@@ -23,7 +23,8 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
             Invert,
         };
 
-        winrt::Microsoft::UI::Composition::SpriteVisual m_backdropVisual{ nullptr };
+        winrt::Microsoft::UI::Xaml::Media::XamlCompositionBrushBase m_backdropXamlBrush{ nullptr };
+        winrt::Microsoft::UI::Xaml::Media::IXamlCompositionBrushBaseProtected m_backdropBrushProtected{ nullptr };
         winrt::Microsoft::UI::Input::InputPointerSource m_pointerSource{ nullptr };
         winrt::Microsoft::UI::Input::InputCursor m_arrowCursor{ nullptr };
         winrt::Microsoft::UI::Input::InputCursor m_moveCursor{ nullptr };
@@ -39,10 +40,10 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         float m_startHeight{};
 
         void StartDynamicScene();
+        void InitializeBackdropBrush();
         void ApplyBackdropEffect();
-        void UpdateBackdropVisualSize();
-        void ClampBackdropVisualRect();
-        bool HitTestBackdropVisual(winrt::Windows::Foundation::Point const& position);
+        void ClampBackdropFrameRect();
+        bool HitTestBackdropFrame(winrt::Windows::Foundation::Point const& position);
         bool HitTestResizeGrip(winrt::Windows::Foundation::Point const& position);
         void InitializeBackdropCursors();
         void EnsurePointerSource();

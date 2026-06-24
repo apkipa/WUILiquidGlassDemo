@@ -187,8 +187,6 @@
                     Background="Transparent"
                     BorderBrush="#FF808080"
                     BorderThickness="2">
-                <Grid x:Name="BackdropVisualHost"
-                      Background="Transparent" />
             </Border>
         </Canvas>
 
