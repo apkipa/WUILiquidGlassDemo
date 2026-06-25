@@ -18,6 +18,7 @@ namespace
     // is not part of the callable ABI we need to model for private GUIDs.
     constexpr size_t kEffectTypeVtableSlotCount = 22;
     constexpr size_t kFromGuidPatchSize = 15;
+    constexpr uint32_t kCompiledEffectSubgraphOutputFlag = 0x8;
 
     struct RuntimeEffectEntry;
 
@@ -947,8 +948,12 @@ namespace
                     definition.sourceCount,
                     false,
                     0,
-                    false);
+                    true);
                 InitializeSubgraphShaderArguments(flattenSubgraph, &flattenColorArgument, 1);
+                // Keep flatten materialized. The custom sampler body needs a real
+                // surface argument from MakeShaderLinkingArgument; if this subgraph
+                // is kept as a fragment output, dwmcorei rewrites the source to a
+                // 0x0500 dependency argument instead of a Texture2D/samplerData pair.
                 flattenSubgraph.flags = 0;
                 flattenSubgraph.linkingArgType = 0;
 
@@ -1050,7 +1055,15 @@ namespace
                 mainSubgraph.constantBufferUpdaterCapacity = updaters + definition.constantBufferPropertyCount;
             }
 
-            mainSubgraph.flags = 0;
+            // DWM materializes non-final subgraphs with flags==0 via
+            // CBrushRenderingGraphBuilder::CreateTechniqueForFragment. For the
+            // flatten/custom-sampler shape, only the custom material subgraph
+            // should stay linked into the final consumer fragment; otherwise the
+            // LiquidGlass result is rendered into an upstream GaussianBlur
+            // prescale target and then linearly enlarged back to the XAML rect.
+            mainSubgraph.flags = UsesFlattenSourceSubgraph(definition)
+                ? kCompiledEffectSubgraphOutputFlag
+                : 0;
             mainSubgraph.linkingArgType = definition.linkingArgType;
             return result;
         }
