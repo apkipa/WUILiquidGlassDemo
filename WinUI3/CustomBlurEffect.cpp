@@ -75,6 +75,8 @@ export float4 PSBodyM(float2 uv, float4 samplerDataExt) { return BlurCore(uv, sa
         nullptr,
         0,
         0,
+        nullptr,
+        0,
         kShaderArguments,
         ARRAYSIZE(kShaderArguments),
         kBackdropCustomSamplerResult,

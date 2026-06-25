@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "CustomBlurEffect.h"
 #include "CustomInvertEffect.h"
+#include "CustomLiquidGlassEffect.h"
 #include "MainWindow.xaml.h"
 #if __has_include("MainWindow.g.cpp")
 #include "MainWindow.g.cpp"
@@ -67,6 +68,24 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
                 self->OnBorderWidthChanged(sender, args);
             }
         });
+        auto hookLiquidGlassSlider = [weak = get_weak()](Controls::Slider const& slider)
+        {
+            slider.ValueChanged([weak](
+                IInspectable const& sender,
+                Controls::Primitives::RangeBaseValueChangedEventArgs const& args)
+            {
+                if (auto self = weak.get())
+                {
+                    self->OnLiquidGlassParameterChanged(sender, args);
+                }
+            });
+        };
+        hookLiquidGlassSlider(BlurRadiusSlider());
+        hookLiquidGlassSlider(RefractionStrengthSlider());
+        hookLiquidGlassSlider(CornerRadiusSlider());
+        hookLiquidGlassSlider(MaterialBorderThicknessSlider());
+        hookLiquidGlassSlider(HighlightStrengthSlider());
+        hookLiquidGlassSlider(DispersionStrengthSlider());
         BackdropHost().SizeChanged([weak = get_weak()](auto&&, auto&&)
         {
             if (auto self = weak.get())
@@ -138,6 +157,7 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         });
 
         ClampBackdropFrameRect();
+        UpdateLiquidGlassControlsState();
     }
 
     void MainWindow::StartDynamicScene()
@@ -170,6 +190,7 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         }
 
         auto const compositor = Media::CompositionTarget::GetCompositorForCurrentThread();
+        m_backdropEffectBrush = nullptr;
         switch (m_backdropEffect)
         {
         case BackdropEffectKind::Invert:
@@ -177,6 +198,7 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
             auto factory = compositor.CreateEffectFactory(CustomInvertEffect::CreateEffect());
             auto brush = factory.CreateBrush();
             brush.SetSourceParameter(L"Backdrop", compositor.CreateBackdropBrush());
+            m_backdropEffectBrush = brush;
             m_backdropBrushProtected.CompositionBrush(brush);
             EffectCaption().Text(L"Backdrop inversion");
             break;
@@ -186,8 +208,30 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
             auto factory = compositor.CreateEffectFactory(CustomBlurEffect::CreateEffect());
             auto brush = factory.CreateBrush();
             brush.SetSourceParameter(L"Backdrop", compositor.CreateBackdropBrush());
+            m_backdropEffectBrush = brush;
             m_backdropBrushProtected.CompositionBrush(brush);
             EffectCaption().Text(L"Backdrop blur");
+            break;
+        }
+        case BackdropEffectKind::LiquidGlass:
+        {
+            auto animatableProperties = single_threaded_vector<hstring>();
+            animatableProperties.Append(CustomLiquidGlassEffect::BlurRadiusPropertyPath);
+            animatableProperties.Append(CustomLiquidGlassEffect::RefractionStrengthPropertyPath);
+            animatableProperties.Append(CustomLiquidGlassEffect::CornerRadiusPropertyPath);
+            animatableProperties.Append(CustomLiquidGlassEffect::BorderThicknessPropertyPath);
+            animatableProperties.Append(CustomLiquidGlassEffect::HighlightStrengthPropertyPath);
+            animatableProperties.Append(CustomLiquidGlassEffect::DispersionStrengthPropertyPath);
+
+            auto factory = compositor.CreateEffectFactory(
+                CustomLiquidGlassEffect::CreateEffect(),
+                animatableProperties);
+            auto brush = factory.CreateBrush();
+            brush.SetSourceParameter(L"Backdrop", compositor.CreateBackdropBrush());
+            m_backdropEffectBrush = brush;
+            m_backdropBrushProtected.CompositionBrush(brush);
+            ApplyLiquidGlassProperties();
+            EffectCaption().Text(L"Liquid glass material");
             break;
         }
         case BackdropEffectKind::Solid:
@@ -197,6 +241,43 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
             EffectCaption().Text(L"Solid translucent brush");
             break;
         }
+
+        UpdateLiquidGlassControlsState();
+    }
+
+    void MainWindow::ApplyLiquidGlassProperties()
+    {
+        if (m_backdropEffect != BackdropEffectKind::LiquidGlass || !m_backdropEffectBrush)
+        {
+            return;
+        }
+
+        auto properties = m_backdropEffectBrush.Properties();
+        properties.InsertScalar(
+            CustomLiquidGlassEffect::BlurRadiusPropertyPath,
+            static_cast<float>(BlurRadiusSlider().Value()));
+        properties.InsertScalar(
+            CustomLiquidGlassEffect::RefractionStrengthPropertyPath,
+            static_cast<float>(RefractionStrengthSlider().Value()));
+        properties.InsertScalar(
+            CustomLiquidGlassEffect::CornerRadiusPropertyPath,
+            static_cast<float>(CornerRadiusSlider().Value()));
+        properties.InsertScalar(
+            CustomLiquidGlassEffect::BorderThicknessPropertyPath,
+            static_cast<float>(MaterialBorderThicknessSlider().Value()));
+        properties.InsertScalar(
+            CustomLiquidGlassEffect::HighlightStrengthPropertyPath,
+            static_cast<float>(HighlightStrengthSlider().Value()));
+        properties.InsertScalar(
+            CustomLiquidGlassEffect::DispersionStrengthPropertyPath,
+            static_cast<float>(DispersionStrengthSlider().Value()));
+    }
+
+    void MainWindow::UpdateLiquidGlassControlsState()
+    {
+        auto const enabled = m_backdropEffect == BackdropEffectKind::LiquidGlass;
+        LiquidGlassControls().IsHitTestVisible(enabled);
+        LiquidGlassControls().Opacity(enabled ? 1.0 : 0.55);
     }
 
     void MainWindow::ClampBackdropFrameRect()
@@ -444,6 +525,10 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         {
             m_backdropEffect = BackdropEffectKind::Invert;
         }
+        else if (selectedIndex == 3)
+        {
+            m_backdropEffect = BackdropEffectKind::LiquidGlass;
+        }
         else
         {
             m_backdropEffect = BackdropEffectKind::Solid;
@@ -458,6 +543,13 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
     {
         m_borderWidth = static_cast<float>(args.NewValue());
         BackdropFrame().BorderThickness({ m_borderWidth, m_borderWidth, m_borderWidth, m_borderWidth });
+    }
+
+    void MainWindow::OnLiquidGlassParameterChanged(
+        IInspectable const&,
+        Controls::Primitives::RangeBaseValueChangedEventArgs const&)
+    {
+        ApplyLiquidGlassProperties();
     }
 
     void MainWindow::EndBackdropInteraction()

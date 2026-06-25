@@ -135,6 +135,7 @@
     <ClInclude Include="CustomBlurEffect.h" />
     <ClInclude Include="CustomEffectRuntime.h" />
     <ClInclude Include="CustomInvertEffect.h" />
+    <ClInclude Include="CustomLiquidGlassEffect.h" />
     <ClInclude Include="App.xaml.h">
       <DependentUpon>App.xaml</DependentUpon>
     </ClInclude>
@@ -153,6 +154,7 @@
     <ClCompile Include="CustomBlurEffect.cpp" />
     <ClCompile Include="CustomEffectRuntime.cpp" />
     <ClCompile Include="CustomInvertEffect.cpp" />
+    <ClCompile Include="CustomLiquidGlassEffect.cpp" />
     <ClCompile Include="App.xaml.cpp">
       <DependentUpon>App.xaml</DependentUpon>
     </ClCompile>

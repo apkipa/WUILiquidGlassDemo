@@ -42,6 +42,8 @@ export float4 PSBody(float4 sample0)
         nullptr,
         0,
         0,
+        nullptr,
+        0,
         kShaderArguments,
         ARRAYSIZE(kShaderArguments),
         0,

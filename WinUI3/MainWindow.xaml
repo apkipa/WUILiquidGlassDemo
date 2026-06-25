@@ -11,7 +11,7 @@
 
     <Grid x:Name="Root" Background="Transparent">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="188" />
+            <ColumnDefinition Width="240" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
@@ -201,6 +201,7 @@
                     <ComboBoxItem Content="Solid" />
                     <ComboBoxItem Content="Blur" />
                     <ComboBoxItem Content="Invert" />
+                    <ComboBoxItem Content="Liquid Glass" />
                 </ComboBox>
                 <TextBlock Text="Border width"
                            Margin="0,12,0,0"
@@ -213,6 +214,55 @@
                         StepFrequency="1"
                         TickFrequency="4"
                         TickPlacement="BottomRight" />
+                <StackPanel x:Name="LiquidGlassControls"
+                            Margin="0,12,0,0"
+                            Spacing="6">
+                    <TextBlock Text="Liquid glass"
+                               FontSize="14"
+                               FontWeight="SemiBold" />
+                    <TextBlock Text="Blur radius" />
+                    <Slider x:Name="BlurRadiusSlider"
+                            Minimum="0"
+                            Maximum="16"
+                            Value="3"
+                            SmallChange="0.25"
+                            StepFrequency="0.25" />
+                    <TextBlock Text="Refraction" />
+                    <Slider x:Name="RefractionStrengthSlider"
+                            Minimum="0"
+                            Maximum="24"
+                            Value="12"
+                            SmallChange="0.25"
+                            StepFrequency="0.25" />
+                    <TextBlock Text="Corner radius" />
+                    <Slider x:Name="CornerRadiusSlider"
+                            Minimum="0"
+                            Maximum="96"
+                            Value="36"
+                            SmallChange="1"
+                            StepFrequency="1" />
+                    <TextBlock Text="Glass border" />
+                    <Slider x:Name="MaterialBorderThicknessSlider"
+                            Minimum="0"
+                            Maximum="8"
+                            Value="1.5"
+                            SmallChange="0.25"
+                            StepFrequency="0.25" />
+                    <TextBlock Text="Highlight" />
+                    <Slider x:Name="HighlightStrengthSlider"
+                            Minimum="0"
+                            Maximum="2"
+                            Value="0.85"
+                            SmallChange="0.05"
+                            StepFrequency="0.05" />
+                    <TextBlock Text="Dispersion" />
+                    <Slider x:Name="DispersionStrengthSlider"
+                            Minimum="0"
+                            Maximum="8"
+                            Value="1.2"
+                            SmallChange="0.1"
+                            StepFrequency="0.1" />
+                </StackPanel>
             </StackPanel>
         </Border>
     </Grid>

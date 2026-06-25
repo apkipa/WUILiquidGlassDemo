@@ -22,6 +22,22 @@ namespace CustomEffectRuntime
         HRESULT (*getDefaultValue)(ABI::Windows::Foundation::IPropertyValue** value);
     };
 
+    struct NativePropertyMetadata
+    {
+        char const* shaderName;
+        uint32_t propertyOffset;
+        uint32_t expressionType;
+        uint32_t propertyType;
+        uint32_t valueCount;
+        void* validator;
+    };
+
+    struct ConstantBufferPropertyMapping
+    {
+        uint32_t propertyIndex;
+        uint32_t constantBufferOffset;
+    };
+
     struct CustomEffectDefinition
     {
         GUID id;
@@ -40,6 +56,9 @@ namespace CustomEffectRuntime
         void const* nativePropertyMetadata;
         uint32_t nativePropertyMetadataCount;
         uint32_t propertiesStructSize;
+
+        ConstantBufferPropertyMapping const* constantBufferProperties;
+        uint32_t constantBufferPropertyCount;
 
         uint16_t const* shaderArguments;
         uint64_t shaderArgumentCount;

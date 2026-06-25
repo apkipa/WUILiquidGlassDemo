@@ -11,6 +11,7 @@ namespace
     constexpr uintptr_t kEffectTypeTableRva = 0x62150;
     constexpr uintptr_t kEffectTypeGetBoundsRva = 0x1e040;
     constexpr uintptr_t kEffectTypeCalcInputBoundsRva = 0x1d700;
+    constexpr uintptr_t kDirectPropertyUpdaterFunctionVtableRva = 0x451e0;
     constexpr size_t kEffectTypeCount = 0x1f;
     // Reverse engineering shows EffectType virtual calls stop at slot 21
     // (+0xa8, GetEffectOpacityRelation) in this WinAppSDK build. Slot 22+
@@ -73,6 +74,37 @@ namespace
     };
 
     static_assert(sizeof(SurfaceData) == 4);
+    static_assert(sizeof(CustomEffectRuntime::NativePropertyMetadata) == 32);
+    static_assert(offsetof(CustomEffectRuntime::NativePropertyMetadata, propertyOffset) == 8);
+    static_assert(offsetof(CustomEffectRuntime::NativePropertyMetadata, propertyType) == 16);
+    static_assert(offsetof(CustomEffectRuntime::NativePropertyMetadata, valueCount) == 20);
+
+    struct NativeFunctionStorage
+    {
+        uint8_t inlineStorage[56];
+        void* callable;
+    };
+
+    static_assert(sizeof(NativeFunctionStorage) == 64);
+
+    struct NativePropertyUpdaterCallable
+    {
+        void** vtable;
+        CustomEffectRuntime::NativePropertyMetadata metadata;
+    };
+
+    static_assert(sizeof(NativePropertyUpdaterCallable) == 40);
+
+    struct ConstantBufferUpdater
+    {
+        uint32_t nodeIndex;
+        uint32_t constantBufferOffset;
+        NativeFunctionStorage update;
+    };
+
+    static_assert(sizeof(ConstantBufferUpdater) == 72);
+    static_assert(offsetof(ConstantBufferUpdater, update) == 8);
+    static_assert(offsetof(ConstantBufferUpdater, update.callable) == 64);
 
     struct CompiledSubgraph
     {
@@ -443,6 +475,11 @@ namespace
                     HeapFree(GetProcessHeap(), 0, subgraph->constantBufferInitialBegin);
                 }
 
+                if (subgraph->constantBufferUpdaterBegin)
+                {
+                    HeapFree(GetProcessHeap(), 0, subgraph->constantBufferUpdaterBegin);
+                }
+
                 if (subgraph->surfaceDataBegin)
                 {
                     HeapFree(GetProcessHeap(), 0, subgraph->surfaceDataBegin);
@@ -634,6 +671,26 @@ namespace
         return memory;
     }
 
+    void InitializeDirectPropertyUpdater(
+        ConstantBufferUpdater& updater,
+        void** directUpdaterFunctionVtable,
+        CustomEffectRuntime::NativePropertyMetadata const& metadata,
+        uint32_t constantBufferOffset)
+    {
+        updater.nodeIndex = 0;
+        updater.constantBufferOffset = constantBufferOffset;
+        memset(&updater.update, 0, sizeof(updater.update));
+
+        // wuceffectsi!DeclareShaderVariableForProperty uses this exact
+        // std::function target for direct animatable properties. Reusing its vtable
+        // keeps SetAnimatableProperty on the native EffectInstance path instead of
+        // rebuilding brushes from XAML slider changes.
+        auto* callable = reinterpret_cast<NativePropertyUpdaterCallable*>(updater.update.inlineStorage);
+        callable->vtable = directUpdaterFunctionVtable;
+        callable->metadata = metadata;
+        updater.update.callable = callable;
+    }
+
     void* CreateCompiledResult(RuntimeEffectEntry* entry)
     {
         EnsureShader(entry);
@@ -716,6 +773,49 @@ namespace
                 subgraph->constantBufferInitialBegin = constantBuffer;
                 subgraph->constantBufferInitialEnd = constantBuffer + definition.constantBufferSize;
                 subgraph->constantBufferInitialCapacity = constantBuffer + definition.constantBufferSize;
+            }
+
+            if (definition.constantBufferPropertyCount)
+            {
+                check_pointer(definition.nativePropertyMetadata);
+                check_pointer(definition.constantBufferProperties);
+
+                auto* metadata = static_cast<CustomEffectRuntime::NativePropertyMetadata const*>(
+                    definition.nativePropertyMetadata);
+                auto* module = g_wuceffectsiModule ? g_wuceffectsiModule : GetModuleHandleW(L"wuceffectsi.dll");
+                check_pointer(module);
+                auto* directUpdaterFunctionVtable =
+                    reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(module) + kDirectPropertyUpdaterFunctionVtableRva);
+
+                auto* updaters = static_cast<ConstantBufferUpdater*>(
+                    AllocateBytes(sizeof(ConstantBufferUpdater) * definition.constantBufferPropertyCount));
+                for (uint32_t index = 0; index < definition.constantBufferPropertyCount; ++index)
+                {
+                    auto const& mapping = definition.constantBufferProperties[index];
+                    if (mapping.propertyIndex >= definition.nativePropertyMetadataCount)
+                    {
+                        check_hresult(E_INVALIDARG);
+                    }
+
+                    auto const& property = metadata[mapping.propertyIndex];
+                    auto const propertyBytes = property.valueCount * sizeof(float);
+                    if (property.propertyType != 8 ||
+                        property.propertyOffset + propertyBytes > definition.propertiesStructSize ||
+                        mapping.constantBufferOffset + propertyBytes > definition.constantBufferSize)
+                    {
+                        check_hresult(E_INVALIDARG);
+                    }
+
+                    InitializeDirectPropertyUpdater(
+                        updaters[index],
+                        directUpdaterFunctionVtable,
+                        property,
+                        mapping.constantBufferOffset);
+                }
+
+                subgraph->constantBufferUpdaterBegin = updaters;
+                subgraph->constantBufferUpdaterEnd = updaters + definition.constantBufferPropertyCount;
+                subgraph->constantBufferUpdaterCapacity = updaters + definition.constantBufferPropertyCount;
             }
 
             subgraph->flags = 0;
