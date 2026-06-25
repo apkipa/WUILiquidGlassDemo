@@ -16,7 +16,7 @@ namespace
     };
 
     constexpr LiquidGlassConstants kInitialConstants{
-        { 3.0f, 1.5f, 36.0f, 12.0f },
+        { 0.0f, 1.5f, 36.0f, 12.0f },
         { 0.85f, 1.0f, 1.2f, 1.0f },
     };
 
@@ -179,7 +179,12 @@ float4 SampleTransmission(float2 uv, float2 texelSize, float blurRadius)
     return color;
 }
 
-float4 LiquidGlassCore(float2 uv, float4 samplerDataExt)
+export float4 FlattenSource(float4 sample0)
+{
+    return sample0;
+}
+
+float4 LiquidGlassCore(float2 uv, float4 samplerDataExt, float4 samplerData)
 {
     const float blurRadius = MaterialParams0.x;
     const float borderThickness = MaterialParams0.y;
@@ -190,9 +195,27 @@ float4 LiquidGlassCore(float2 uv, float4 samplerDataExt)
     const float dispersionStrength = MaterialParams1.z;
     const float materialOpacity = MaterialParams1.w;
 
-    const float2 rectSize = max(samplerDataExt.xy, 1.0f.xx);
+    const float2 contentMin = min(samplerData.xy, samplerData.zw);
+    const float2 contentMax = max(samplerData.xy, samplerData.zw);
+    const float2 contentUvSizeRaw = contentMax - contentMin;
+    const bool hasContentRect = all(contentUvSizeRaw > 1e-6f.xx);
+    const float2 contentUvSize = hasContentRect ? contentUvSizeRaw : 1.0f.xx;
+    // Do not saturate the content-space coordinate before the rounded-rect SDF.
+    // GaussianBlur expands the source into padded intermediates; clamping that
+    // padding back onto the content edge makes the material border stretch and
+    // blur outward as radius grows. Letting coordinates go outside [0,1] keeps
+    // the shape tied to DWM's effective content rect instead.
+    const float2 localUv = hasContentRect ? ((uv - contentMin) / contentUvSize) : uv;
+
+    const float2 localUvPixelStep = max(abs(ddx(localUv)) + abs(ddy(localUv)), 1e-6f.xx);
+    // samplerDataExt.xy is the physical source/intermediate size. GaussianBlur can
+    // grow that surface and DWM then linearly maps it back, so using ext as material
+    // geometry makes corner radius scale with blur padding. Pixel derivatives are
+    // evaluated after that mapping and recover the current output-space material
+    // size without adding app-provided width/height properties.
+    const float2 rectSize = max(1.0f.xx / localUvPixelStep, 1.0f.xx);
     const float2 texelSize = max(samplerDataExt.zw, 1e-6f.xx);
-    const float2 localPosition = saturate(uv) * rectSize;
+    const float2 localPosition = localUv * rectSize;
     const float2 halfRect = rectSize * 0.5f;
     const float2 local = localPosition - halfRect;
     const float clampedCornerRadius = min(cornerRadius, min(halfRect.x, halfRect.y));
@@ -250,32 +273,37 @@ float4 LiquidGlassCore(float2 uv, float4 samplerDataExt)
 
 // DWM appends sampler edge-mode suffixes for custom sampler bodies. The aliases
 // preserve the code-only path while still using DWM's native custom sampler linker.
-export float4 PSBody(float2 uv, float4 samplerDataExt) { return LiquidGlassCore(uv, samplerDataExt); }
-export float4 PSBodyCC(float2 uv, float4 samplerDataExt) { return LiquidGlassCore(uv, samplerDataExt); }
-export float4 PSBodyCW(float2 uv, float4 samplerDataExt) { return LiquidGlassCore(uv, samplerDataExt); }
-export float4 PSBodyCM(float2 uv, float4 samplerDataExt) { return LiquidGlassCore(uv, samplerDataExt); }
-export float4 PSBodyWC(float2 uv, float4 samplerDataExt) { return LiquidGlassCore(uv, samplerDataExt); }
-export float4 PSBodyWW(float2 uv, float4 samplerDataExt) { return LiquidGlassCore(uv, samplerDataExt); }
-export float4 PSBodyWM(float2 uv, float4 samplerDataExt) { return LiquidGlassCore(uv, samplerDataExt); }
-export float4 PSBodyMC(float2 uv, float4 samplerDataExt) { return LiquidGlassCore(uv, samplerDataExt); }
-export float4 PSBodyMW(float2 uv, float4 samplerDataExt) { return LiquidGlassCore(uv, samplerDataExt); }
-export float4 PSBodyMM(float2 uv, float4 samplerDataExt) { return LiquidGlassCore(uv, samplerDataExt); }
-export float4 PSBodyC(float2 uv, float4 samplerDataExt) { return LiquidGlassCore(uv, samplerDataExt); }
-export float4 PSBodyW(float2 uv, float4 samplerDataExt) { return LiquidGlassCore(uv, samplerDataExt); }
-export float4 PSBodyM(float2 uv, float4 samplerDataExt) { return LiquidGlassCore(uv, samplerDataExt); }
+// These signatures intentionally include samplerData: DWM's single-source custom
+// kernel ABI uses it to expose the effective content rect of expanded intermediates,
+// which keeps the material shape stable when an upstream GaussianBlur changes padding.
+export float4 PSBody(float2 uv, float4 samplerDataExt, float4 samplerData) { return LiquidGlassCore(uv, samplerDataExt, samplerData); }
+export float4 PSBodyCC(float2 uv, float4 samplerDataExt, float4 samplerData) { return LiquidGlassCore(uv, samplerDataExt, samplerData); }
+export float4 PSBodyCW(float2 uv, float4 samplerDataExt, float4 samplerData) { return LiquidGlassCore(uv, samplerDataExt, samplerData); }
+export float4 PSBodyCM(float2 uv, float4 samplerDataExt, float4 samplerData) { return LiquidGlassCore(uv, samplerDataExt, samplerData); }
+export float4 PSBodyWC(float2 uv, float4 samplerDataExt, float4 samplerData) { return LiquidGlassCore(uv, samplerDataExt, samplerData); }
+export float4 PSBodyWW(float2 uv, float4 samplerDataExt, float4 samplerData) { return LiquidGlassCore(uv, samplerDataExt, samplerData); }
+export float4 PSBodyWM(float2 uv, float4 samplerDataExt, float4 samplerData) { return LiquidGlassCore(uv, samplerDataExt, samplerData); }
+export float4 PSBodyMC(float2 uv, float4 samplerDataExt, float4 samplerData) { return LiquidGlassCore(uv, samplerDataExt, samplerData); }
+export float4 PSBodyMW(float2 uv, float4 samplerDataExt, float4 samplerData) { return LiquidGlassCore(uv, samplerDataExt, samplerData); }
+export float4 PSBodyMM(float2 uv, float4 samplerDataExt, float4 samplerData) { return LiquidGlassCore(uv, samplerDataExt, samplerData); }
+export float4 PSBodyC(float2 uv, float4 samplerDataExt, float4 samplerData) { return LiquidGlassCore(uv, samplerDataExt, samplerData); }
+export float4 PSBodyW(float2 uv, float4 samplerDataExt, float4 samplerData) { return LiquidGlassCore(uv, samplerDataExt, samplerData); }
+export float4 PSBodyM(float2 uv, float4 samplerDataExt, float4 samplerData) { return LiquidGlassCore(uv, samplerDataExt, samplerData); }
 )";
 
     constexpr uint16_t kBackdropUvArgument = 0x0100;
     constexpr uint16_t kBackdropSamplerDataExtArgument = 0x0400;
+    constexpr uint16_t kBackdropSamplerDataArgument = 0x0300;
     constexpr uint16_t kBackdropCustomSamplerResult = 0x0200;
 
     CustomEffectRuntime::SourceDescriptor const kSources[] = {
-        { L"Backdrop", CustomEffectRuntime::SourceKind::Backdrop, true },
+        { L"Backdrop", CustomEffectRuntime::SourceKind::Backdrop, true, true },
     };
 
     uint16_t const kShaderArguments[] = {
         kBackdropUvArgument,
         kBackdropSamplerDataExtArgument,
+        kBackdropSamplerDataArgument,
     };
 
     CustomEffectRuntime::CustomEffectDefinition const kDefinition{
@@ -300,6 +328,8 @@ export float4 PSBodyM(float2 uv, float4 samplerDataExt) { return LiquidGlassCore
         true,
         sizeof(kInitialConstants),
         &kInitialConstants,
+        true,
+        "FlattenSource",
     };
 }
 
@@ -309,8 +339,9 @@ namespace CustomLiquidGlassEffect
     {
         // This ports the WinUI2 glass material into the DWM custom sampler model.
         // The old app rendered an intermediate surface itself; this effect instead
-        // asks DWM for UV plus samplerDataExt so the shader can sample the backdrop
-        // texture directly and keep size-dependent refraction in pixel units.
+        // asks DWM for UV plus samplerDataExt/samplerData so the shader can sample
+        // the backdrop texture directly while using DWM's effective-content rect for
+        // size-dependent material coordinates.
         return CustomEffectRuntime::CreateEffect(kDefinition);
     }
 

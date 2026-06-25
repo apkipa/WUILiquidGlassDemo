@@ -53,7 +53,7 @@ export float4 PSBodyM(float2 uv, float4 samplerDataExt) { return BlurCore(uv, sa
     constexpr uint16_t kBackdropCustomSamplerResult = 0x0200;
 
     CustomEffectRuntime::SourceDescriptor const kSources[] = {
-        { L"Backdrop", CustomEffectRuntime::SourceKind::Backdrop, true },
+        { L"Backdrop", CustomEffectRuntime::SourceKind::Backdrop, false, true },
     };
 
     uint16_t const kShaderArguments[] = {
@@ -82,6 +82,8 @@ export float4 PSBodyM(float2 uv, float4 samplerDataExt) { return BlurCore(uv, sa
         kBackdropCustomSamplerResult,
         true,
         0,
+        nullptr,
+        false,
         nullptr,
     };
 }

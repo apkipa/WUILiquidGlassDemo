@@ -11,6 +11,7 @@ namespace CustomEffectRuntime
     {
         wchar_t const* name;
         SourceKind kind;
+        bool requiresSamplerData;
         bool requiresSamplerDataExt;
     };
 
@@ -67,6 +68,9 @@ namespace CustomEffectRuntime
 
         uint32_t constantBufferSize;
         void const* constantBufferInitialValue;
+
+        bool flattenSourceBeforeCustomSampler;
+        char const* flattenShaderFunctionName;
     };
 
     void RegisterEffect(CustomEffectDefinition const& definition);

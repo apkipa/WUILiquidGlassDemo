@@ -198,37 +198,48 @@ namespace
         return nullptr;
     }
 
+    void CompileShaderLibrary(
+        char const* source,
+        size_t sourceSize,
+        ID3DBlob** shaderBlob)
+    {
+        // wuceffectsi!EffectGenerator::BuildCompiledEffectSubgraph does not compile
+        // generated effects as lib_5_0. This WinUI3 build passes
+        // "lib_4_0_level_9_3_ps_only" and flags 0x8800
+        // (STRICTNESS | OPTIMIZATION_LEVEL3) to D3DCompile, then dwmcorei links the
+        // library into ps_4_0/ps_4_0_level_9_x. Matching that profile is intentional:
+        // D3DLoadModule/CreateInstance accepts a lib_5_0 blob, but the final DWM
+        // ID3D11Linker::Link path rejects the mixed-profile graph with E_FAIL.
+        UINT flags = D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3;
+
+        winrt::com_ptr<ID3DBlob> errors;
+        check_hresult(D3DCompile(
+            source,
+            sourceSize,
+            nullptr,
+            nullptr,
+            nullptr,
+            // dwmcorei!LoadShaderBody consumes this blob with D3DLoadModule and then
+            // CreateInstance(functionName). A standalone ps_4_0 blob compiles locally
+            // but is not a loadable shader-linking module, so this runtime keeps the
+            // code-only path aligned with wuceffectsi's generated-effect profile.
+            nullptr,
+            "lib_4_0_level_9_3_ps_only",
+            flags,
+            0,
+            shaderBlob,
+            errors.put()));
+    }
+
     void EnsureShader(RuntimeEffectEntry* entry)
     {
         std::call_once(entry->shaderOnce, [entry]
         {
-            // wuceffectsi!EffectGenerator::BuildCompiledEffectSubgraph does not compile
-            // generated effects as lib_5_0. This WinUI3 build passes
-            // "lib_4_0_level_9_3_ps_only" and flags 0x8800
-            // (STRICTNESS | OPTIMIZATION_LEVEL3) to D3DCompile, then dwmcorei links the
-            // library into ps_4_0/ps_4_0_level_9_x. Matching that profile is intentional:
-            // D3DLoadModule/CreateInstance accepts a lib_5_0 blob, but the final DWM
-            // ID3D11Linker::Link path rejects the mixed-profile graph with E_FAIL.
-            UINT flags = D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3;
-
             auto const& definition = *entry->definition;
-            winrt::com_ptr<ID3DBlob> errors;
-            check_hresult(D3DCompile(
+            CompileShaderLibrary(
                 definition.shaderSource,
                 definition.shaderSourceSize,
-                nullptr,
-                nullptr,
-                nullptr,
-                // dwmcorei!LoadShaderBody consumes this blob with D3DLoadModule and then
-                // CreateInstance(functionName). A standalone ps_4_0 blob compiles locally
-                // but is not a loadable shader-linking module, so this runtime keeps the
-                // code-only path aligned with wuceffectsi's generated-effect profile.
-                nullptr,
-                "lib_4_0_level_9_3_ps_only",
-                flags,
-                0,
-                entry->shaderBlob.put(),
-                errors.put()));
+                entry->shaderBlob.put());
         });
     }
 
@@ -265,6 +276,16 @@ namespace
     bool __fastcall EffectType_ReturnFalse(RuntimeEffectType*)
     {
         return false;
+    }
+
+    bool __fastcall EffectType_RequiresSourceFlattening(RuntimeEffectType* self)
+    {
+        // wuceffectsi!Traverser uses EffectType slot 5 as the native source-flattening
+        // gate: when it is true, named inputs are first wrapped in
+        // CSingleInputCompositeEffect and become their own EffectSubgraph. Returning true
+        // here only for effects whose compiled result also exposes a flatten subgraph
+        // keeps FlattenedEffectGraph and ICompiledEffect subgraph counts aligned.
+        return self->entry->definition->flattenSourceBeforeCustomSampler;
     }
 
     bool __fastcall EffectType_ReturnTrue(RuntimeEffectType*)
@@ -343,7 +364,7 @@ namespace
         vtable[2] = reinterpret_cast<void*>(EffectType_GetEffectSamplingBehavior);
         vtable[3] = reinterpret_cast<void*>(EffectType_IsValidInputCount);
         vtable[4] = reinterpret_cast<void*>(EffectType_IsValidInputType);
-        vtable[5] = reinterpret_cast<void*>(EffectType_ReturnFalse);
+        vtable[5] = reinterpret_cast<void*>(EffectType_RequiresSourceFlattening);
         vtable[6] = reinterpret_cast<void*>(EffectType_IsInputTransform);
         vtable[7] = reinterpret_cast<void*>(EffectType_ReturnFalse);
         vtable[8] = reinterpret_cast<void*>(EffectType_ReturnFalse);
@@ -449,6 +470,10 @@ namespace
         return static_cast<ULONG>(InterlockedDecrement(refCount));
     }
 
+    uint32_t PointerRangeByteSize(void const* begin, void const* end);
+    bool UsesFlattenSourceSubgraph(CustomEffectRuntime::CustomEffectDefinition const& definition);
+    uint32_t GetMainSubgraphIndex(CustomEffectRuntime::CustomEffectDefinition const& definition);
+
     ULONG __fastcall Wrapper_AddRef(CompiledResult* self)
     {
         return AddRef(&self->refCount);
@@ -503,20 +528,33 @@ namespace
         return ref;
     }
 
-    uint32_t __fastcall Wrapper_GetSubgraphCount(CompiledResult*)
+    uint32_t __fastcall Wrapper_GetSubgraphCount(CompiledResult* self)
     {
-        return 1;
+        auto* subgraphBegin = self->subgraphBegin;
+        auto* subgraphEnd = self->subgraphEnd;
+        if (!subgraphBegin || !subgraphEnd || subgraphEnd < subgraphBegin)
+        {
+            return 0;
+        }
+
+        return static_cast<uint32_t>(subgraphEnd - subgraphBegin);
     }
 
     ShaderLinkingBody* __fastcall Wrapper_GetSubgraphShaderLinkingBody(
         CompiledResult* self,
         ShaderLinkingBody* body,
-        uint32_t)
+        uint32_t subgraphIndex)
     {
         EnsureShader(self->entry);
 
         auto const& definition = *self->entry->definition;
-        auto* subgraph = self->subgraphBegin;
+        if (subgraphIndex >= Wrapper_GetSubgraphCount(self))
+        {
+            check_hresult(E_INVALIDARG);
+        }
+
+        auto* subgraph = self->subgraphBegin + subgraphIndex;
+        auto const isMainSubgraph = subgraphIndex == GetMainSubgraphIndex(definition);
         auto const argCount = subgraph && subgraph->shaderArgumentBegin && subgraph->shaderArgumentEnd
             ? static_cast<uint64_t>(
                 (static_cast<uint8_t*>(subgraph->shaderArgumentEnd) -
@@ -530,56 +568,111 @@ namespace
             : definition.shaderArguments;
         body->bytecodeSize = self->entry->shaderBlob->GetBufferSize();
         body->bytecodeData = self->entry->shaderBlob->GetBufferPointer();
-        body->functionName = definition.shaderFunctionName;
-        body->constantBufferSize = definition.constantBufferSize;
-        body->linkingArgType = definition.linkingArgType;
-        body->hasCustomSamplers = definition.hasCustomSamplers ? 1 : 0;
+        body->functionName = isMainSubgraph ? definition.shaderFunctionName : definition.flattenShaderFunctionName;
+        body->constantBufferSize = PointerRangeByteSize(
+            subgraph->constantBufferInitialBegin,
+            subgraph->constantBufferInitialEnd);
+        body->linkingArgType = subgraph->linkingArgType;
+        // wuceffectsi!CompiledEffect::GetSubgraphShaderLinkingBody writes this byte as
+        // 1 for generated shader-linking subgraphs, including ordinary CompositeEffect
+        // passthrough code. The flatten stage still uses color-input arguments; this
+        // byte is kept native-shaped so DWM treats it as generated linker code.
+        body->hasCustomSamplers = isMainSubgraph
+            ? (definition.hasCustomSamplers ? 1 : 0)
+            : 1;
         body->padding = 0;
         return body;
     }
 
-    uint32_t __fastcall Wrapper_GetSubgraphInputCount(CompiledResult* self, uint32_t)
+    uint32_t __fastcall Wrapper_GetSubgraphInputCount(CompiledResult* self, uint32_t subgraphIndex)
     {
-        return self->entry->definition->sourceCount;
+        if (subgraphIndex >= Wrapper_GetSubgraphCount(self))
+        {
+            return 0;
+        }
+
+        auto const& subgraph = self->subgraphBegin[subgraphIndex];
+        auto* inputBegin = static_cast<InputBinding*>(subgraph.inputBindingBegin);
+        auto* inputEnd = static_cast<InputBinding*>(subgraph.inputBindingEnd);
+        if (!inputBegin || !inputEnd || inputEnd < inputBegin)
+        {
+            return 0;
+        }
+
+        return static_cast<uint32_t>(inputEnd - inputBegin);
     }
 
-    uint32_t __fastcall Wrapper_GetSubgraphFlags(CompiledResult*, uint32_t)
+    uint32_t __fastcall Wrapper_GetSubgraphFlags(CompiledResult* self, uint32_t subgraphIndex)
     {
-        return 0;
+        if (subgraphIndex >= Wrapper_GetSubgraphCount(self))
+        {
+            return 0;
+        }
+
+        return self->subgraphBegin[subgraphIndex].flags;
     }
 
     uint32_t __fastcall Wrapper_GetInputMapping(
-        CompiledResult*,
-        uint32_t,
+        CompiledResult* self,
+        uint32_t subgraphIndex,
         uint32_t inputIndex,
         bool* isSubgraphOutput)
     {
-        if (isSubgraphOutput)
+        if (subgraphIndex >= Wrapper_GetSubgraphCount(self))
         {
-            *isSubgraphOutput = false;
+            check_hresult(E_INVALIDARG);
         }
 
-        return inputIndex;
+        auto const& subgraph = self->subgraphBegin[subgraphIndex];
+        auto* inputBegin = static_cast<InputBinding*>(subgraph.inputBindingBegin);
+        auto* inputEnd = static_cast<InputBinding*>(subgraph.inputBindingEnd);
+        if (!inputBegin || !inputEnd ||
+            inputIndex >= static_cast<uint32_t>(inputEnd - inputBegin))
+        {
+            check_hresult(E_INVALIDARG);
+        }
+
+        auto const& binding = inputBegin[inputIndex];
+        if (isSubgraphOutput)
+        {
+            *isSubgraphOutput = binding.isSubgraphOutput;
+        }
+
+        return binding.inputIndex;
     }
 
     bool __fastcall Wrapper_IsUVClampingRequired(
-        CompiledResult*,
-        uint32_t,
-        uint32_t,
+        CompiledResult* self,
+        uint32_t subgraphIndex,
+        uint32_t inputIndex,
         uint32_t* horizontalMode,
         uint32_t* verticalMode)
     {
+        bool required = false;
+        auto* subgraphBegin = self->subgraphBegin;
+        auto* subgraphEnd = self->subgraphEnd;
+        if (subgraphBegin && subgraphEnd &&
+            subgraphIndex < static_cast<uint32_t>(subgraphEnd - subgraphBegin))
+        {
+            auto const& subgraph = subgraphBegin[subgraphIndex];
+            auto* surfaceDataBegin = static_cast<SurfaceData*>(subgraph.surfaceDataBegin);
+            auto* surfaceDataEnd = static_cast<SurfaceData*>(subgraph.surfaceDataEnd);
+            required = surfaceDataBegin && surfaceDataEnd &&
+                inputIndex < static_cast<uint32_t>(surfaceDataEnd - surfaceDataBegin) &&
+                surfaceDataBegin[inputIndex].data[2] != 0;
+        }
+
         if (horizontalMode)
         {
-            *horizontalMode = 0;
+            *horizontalMode = required ? 1 : 0;
         }
 
         if (verticalMode)
         {
-            *verticalMode = 0;
+            *verticalMode = required ? 1 : 0;
         }
 
-        return false;
+        return required;
     }
 
     bool __fastcall Wrapper_IsSamplerDataExtRequired(
@@ -606,20 +699,28 @@ namespace
         return surfaceDataBegin[inputIndex].data[3] != 0;
     }
 
-    uint32_t __fastcall Wrapper_GetConstantBufferSize(CompiledResult* self, uint32_t)
+    uint32_t __fastcall Wrapper_GetConstantBufferSize(CompiledResult* self, uint32_t subgraphIndex)
     {
-        return self->entry->definition->constantBufferSize;
-    }
-
-    void const* __fastcall Wrapper_GetConstantBufferInitialValue(CompiledResult* self, uint32_t)
-    {
-        auto* subgraph = self->subgraphBegin;
-        if (subgraph && subgraph->constantBufferInitialBegin)
+        if (subgraphIndex >= Wrapper_GetSubgraphCount(self))
         {
-            return subgraph->constantBufferInitialBegin;
+            return 0;
         }
 
-        return self->entry->definition->constantBufferInitialValue;
+        auto const& subgraph = self->subgraphBegin[subgraphIndex];
+        return PointerRangeByteSize(
+            subgraph.constantBufferInitialBegin,
+            subgraph.constantBufferInitialEnd);
+    }
+
+    void const* __fastcall Wrapper_GetConstantBufferInitialValue(CompiledResult* self, uint32_t subgraphIndex)
+    {
+        if (subgraphIndex >= Wrapper_GetSubgraphCount(self))
+        {
+            return nullptr;
+        }
+
+        auto const& subgraph = self->subgraphBegin[subgraphIndex];
+        return subgraph.constantBufferInitialBegin;
     }
 
     void* __fastcall Wrapper_ScalarDeletingDestructor(CompiledResult* self, uint32_t flags)
@@ -671,13 +772,46 @@ namespace
         return memory;
     }
 
+    uint32_t PointerRangeByteSize(void const* begin, void const* end)
+    {
+        auto const beginAddress = reinterpret_cast<uintptr_t>(begin);
+        auto const endAddress = reinterpret_cast<uintptr_t>(end);
+        if (!beginAddress || !endAddress || endAddress < beginAddress)
+        {
+            return 0;
+        }
+
+        return static_cast<uint32_t>(endAddress - beginAddress);
+    }
+
+    bool UsesFlattenSourceSubgraph(CustomEffectRuntime::CustomEffectDefinition const& definition)
+    {
+        return definition.flattenSourceBeforeCustomSampler;
+    }
+
+    uint32_t GetMainSubgraphIndex(CustomEffectRuntime::CustomEffectDefinition const& definition)
+    {
+        return UsesFlattenSourceSubgraph(definition) ? 1u : 0u;
+    }
+
+    uint32_t GetCompiledSubgraphCount(CustomEffectRuntime::CustomEffectDefinition const& definition)
+    {
+        // slot 5 source flattening creates three FlattenedEffectGraph subgraphs:
+        // source composite, the custom effect, then a final composite wrapper around
+        // the custom effect. ICompiledEffect must expose the same count because
+        // EffectInstance iterates the flattened subgraph vector when allocating
+        // constant buffers.
+        return UsesFlattenSourceSubgraph(definition) ? 3u : 1u;
+    }
+
     void InitializeDirectPropertyUpdater(
         ConstantBufferUpdater& updater,
         void** directUpdaterFunctionVtable,
         CustomEffectRuntime::NativePropertyMetadata const& metadata,
-        uint32_t constantBufferOffset)
+        uint32_t constantBufferOffset,
+        uint32_t nodeIndex)
     {
-        updater.nodeIndex = 0;
+        updater.nodeIndex = nodeIndex;
         updater.constantBufferOffset = constantBufferOffset;
         memset(&updater.update, 0, sizeof(updater.update));
 
@@ -689,6 +823,74 @@ namespace
         callable->vtable = directUpdaterFunctionVtable;
         callable->metadata = metadata;
         updater.update.callable = callable;
+    }
+
+    void InitializeSubgraphInputs(
+        CompiledSubgraph& subgraph,
+        CustomEffectRuntime::SourceDescriptor const* sources,
+        uint32_t sourceCount,
+        bool mapFromSubgraphOutput,
+        uint32_t mappedInputBase,
+        bool copySamplerDataExtRequirements)
+    {
+        if (!sourceCount)
+        {
+            return;
+        }
+
+        auto* inputBindings = static_cast<InputBinding*>(
+            AllocateBytes(sizeof(InputBinding) * sourceCount));
+        auto* surfaceData = static_cast<SurfaceData*>(
+            AllocateBytes(sizeof(SurfaceData) * sourceCount));
+        for (uint32_t index = 0; index < sourceCount; ++index)
+        {
+            inputBindings[index].inputIndex = mappedInputBase + index;
+            inputBindings[index].isSubgraphOutput = mapFromSubgraphOutput;
+
+            // wuceffectsi copies EffectGenerator::SurfaceData bytes 4..7 into
+            // CompiledEffectSubgraph::SurfaceData. This code-only path bypasses
+            // that generator, so we synthesize the two bytes DWM later observes:
+            // byte 2 drives IsUVClampingRequired and makes PopulateSamplerArguments
+            // emit GetSamplerDataN, while byte 3 drives IsSamplerDataExtRequired
+            // and emits GetSamplerDataExtN. This intentionally replaces the
+            // earlier samplerDataExt-only shortcut because CCustomKernelEffect's
+            // single-source model uses samplerData to recover the effective content
+            // rect when a source has been materialized into a padded intermediate.
+            surfaceData[index].data[2] =
+                copySamplerDataExtRequirements && sources[index].requiresSamplerData ? 1 : 0;
+            surfaceData[index].data[3] =
+                copySamplerDataExtRequirements && sources[index].requiresSamplerDataExt ? 1 : 0;
+        }
+
+        subgraph.inputBindingBegin = inputBindings;
+        subgraph.inputBindingEnd = inputBindings + sourceCount;
+        subgraph.inputBindingCapacity = inputBindings + sourceCount;
+
+        subgraph.surfaceDataBegin = surfaceData;
+        subgraph.surfaceDataEnd = surfaceData + sourceCount;
+        subgraph.surfaceDataCapacity = surfaceData + sourceCount;
+    }
+
+    void InitializeSubgraphShaderArguments(
+        CompiledSubgraph& subgraph,
+        uint16_t const* arguments,
+        uint64_t argumentCount)
+    {
+        if (!argumentCount)
+        {
+            return;
+        }
+
+        auto* shaderArguments = static_cast<uint16_t*>(
+            AllocateBytes(sizeof(uint16_t) * static_cast<size_t>(argumentCount)));
+        memcpy(
+            shaderArguments,
+            arguments,
+            sizeof(uint16_t) * static_cast<size_t>(argumentCount));
+
+        subgraph.shaderArgumentBegin = shaderArguments;
+        subgraph.shaderArgumentEnd = shaderArguments + argumentCount;
+        subgraph.shaderArgumentCapacity = shaderArguments + argumentCount;
     }
 
     void* CreateCompiledResult(RuntimeEffectEntry* entry)
@@ -707,56 +909,85 @@ namespace
             result->refCount = 1;
             result->entry = entry;
 
+            if (UsesFlattenSourceSubgraph(definition))
+            {
+                // The flatten stage models the Traverser path used by source-materializing
+                // effects such as GaussianBlur: first emit an ordinary color passthrough
+                // subgraph, then let the custom sampler subgraph consume that intermediate
+                // as a real surface. Without this extra subgraph dwmcorei records the
+                // upstream effect as a child fragment and MakeShaderLinkingArgument emits
+                // 0x0500 dependency output, which cannot provide texture/samplerDataExt.
+                if (definition.sourceCount != 1 ||
+                    !definition.flattenShaderFunctionName ||
+                    definition.shaderArgumentCount == 0)
+                {
+                    check_hresult(E_INVALIDARG);
+                }
+            }
+
+            auto const subgraphCount = GetCompiledSubgraphCount(definition);
             auto* subgraph = static_cast<CompiledSubgraph*>(
-                HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(CompiledSubgraph)));
+                HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(CompiledSubgraph) * subgraphCount));
             check_pointer(subgraph);
 
             result->subgraphBegin = subgraph;
-            result->subgraphEnd = subgraph + 1;
-            result->subgraphCapacity = subgraph + 1;
+            result->subgraphEnd = subgraph + subgraphCount;
+            result->subgraphCapacity = subgraph + subgraphCount;
 
-            if (definition.sourceCount)
+            auto const mainSubgraphIndex = GetMainSubgraphIndex(definition);
+            auto& mainSubgraph = subgraph[mainSubgraphIndex];
+
+            if (UsesFlattenSourceSubgraph(definition))
             {
-                auto* inputBindings = static_cast<InputBinding*>(
-                    AllocateBytes(sizeof(InputBinding) * definition.sourceCount));
-                auto* surfaceData = static_cast<SurfaceData*>(
-                    AllocateBytes(sizeof(SurfaceData) * definition.sourceCount));
-                for (uint32_t index = 0; index < definition.sourceCount; ++index)
-                {
-                    inputBindings[index].inputIndex = index;
-                    inputBindings[index].isSubgraphOutput = false;
+                constexpr uint16_t flattenColorArgument = 0x0200;
+                auto& flattenSubgraph = subgraph[0];
+                InitializeSubgraphInputs(
+                    flattenSubgraph,
+                    definition.sources,
+                    definition.sourceCount,
+                    false,
+                    0,
+                    false);
+                InitializeSubgraphShaderArguments(flattenSubgraph, &flattenColorArgument, 1);
+                flattenSubgraph.flags = 0;
+                flattenSubgraph.linkingArgType = 0;
 
-                    // wuceffectsi copies EffectGenerator::SurfaceData bytes 4..7 into
-                    // CompiledEffectSubgraph::SurfaceData, and dwmcorei reads byte 3
-                    // through IsSamplerDataExtRequired before it decides whether to emit
-                    // GetSamplerDataExtN. The code-only path bypasses that generator, so
-                    // we synthesize only the byte required to request DWM's native
-                    // sampler-size row instead of adding public width/height properties.
-                    surfaceData[index].data[3] = definition.sources[index].requiresSamplerDataExt ? 1 : 0;
-                }
+                InitializeSubgraphInputs(
+                    mainSubgraph,
+                    definition.sources,
+                    definition.sourceCount,
+                    true,
+                    0,
+                    true);
 
-                subgraph->inputBindingBegin = inputBindings;
-                subgraph->inputBindingEnd = inputBindings + definition.sourceCount;
-                subgraph->inputBindingCapacity = inputBindings + definition.sourceCount;
-
-                subgraph->surfaceDataBegin = surfaceData;
-                subgraph->surfaceDataEnd = surfaceData + definition.sourceCount;
-                subgraph->surfaceDataCapacity = surfaceData + definition.sourceCount;
+                constexpr uint16_t finalColorArgument = 0x0200;
+                auto& finalSubgraph = subgraph[2];
+                InitializeSubgraphInputs(
+                    finalSubgraph,
+                    definition.sources,
+                    definition.sourceCount,
+                    true,
+                    1,
+                    false);
+                InitializeSubgraphShaderArguments(finalSubgraph, &finalColorArgument, 1);
+                finalSubgraph.flags = 0;
+                finalSubgraph.linkingArgType = 0;
+            }
+            else
+            {
+                InitializeSubgraphInputs(
+                    mainSubgraph,
+                    definition.sources,
+                    definition.sourceCount,
+                    false,
+                    0,
+                    true);
             }
 
-            if (definition.shaderArgumentCount)
-            {
-                auto* shaderArguments = static_cast<uint16_t*>(
-                    AllocateBytes(sizeof(uint16_t) * static_cast<size_t>(definition.shaderArgumentCount)));
-                memcpy(
-                    shaderArguments,
-                    definition.shaderArguments,
-                    sizeof(uint16_t) * static_cast<size_t>(definition.shaderArgumentCount));
-
-                subgraph->shaderArgumentBegin = shaderArguments;
-                subgraph->shaderArgumentEnd = shaderArguments + definition.shaderArgumentCount;
-                subgraph->shaderArgumentCapacity = shaderArguments + definition.shaderArgumentCount;
-            }
+            InitializeSubgraphShaderArguments(
+                mainSubgraph,
+                definition.shaderArguments,
+                definition.shaderArgumentCount);
 
             if (definition.constantBufferSize)
             {
@@ -770,9 +1001,9 @@ namespace
                         definition.constantBufferSize);
                 }
 
-                subgraph->constantBufferInitialBegin = constantBuffer;
-                subgraph->constantBufferInitialEnd = constantBuffer + definition.constantBufferSize;
-                subgraph->constantBufferInitialCapacity = constantBuffer + definition.constantBufferSize;
+                mainSubgraph.constantBufferInitialBegin = constantBuffer;
+                mainSubgraph.constantBufferInitialEnd = constantBuffer + definition.constantBufferSize;
+                mainSubgraph.constantBufferInitialCapacity = constantBuffer + definition.constantBufferSize;
             }
 
             if (definition.constantBufferPropertyCount)
@@ -810,16 +1041,17 @@ namespace
                         updaters[index],
                         directUpdaterFunctionVtable,
                         property,
-                        mapping.constantBufferOffset);
+                        mapping.constantBufferOffset,
+                        mainSubgraphIndex);
                 }
 
-                subgraph->constantBufferUpdaterBegin = updaters;
-                subgraph->constantBufferUpdaterEnd = updaters + definition.constantBufferPropertyCount;
-                subgraph->constantBufferUpdaterCapacity = updaters + definition.constantBufferPropertyCount;
+                mainSubgraph.constantBufferUpdaterBegin = updaters;
+                mainSubgraph.constantBufferUpdaterEnd = updaters + definition.constantBufferPropertyCount;
+                mainSubgraph.constantBufferUpdaterCapacity = updaters + definition.constantBufferPropertyCount;
             }
 
-            subgraph->flags = 0;
-            subgraph->linkingArgType = definition.linkingArgType;
+            mainSubgraph.flags = 0;
+            mainSubgraph.linkingArgType = definition.linkingArgType;
             return result;
         }
         catch (...)
@@ -1101,6 +1333,17 @@ namespace
             m_definition(definition),
             m_name(definition->effectName)
         {
+            m_sources.reserve(definition->sourceCount);
+            for (uint32_t index = 0; index < definition->sourceCount; ++index)
+            {
+                auto const& sourceDefinition = definition->sources[index];
+                // wuceffectsi!Traverser::FindSourceFlatteningEffect matches source
+                // objects by raw COM pointer identity. Returning a freshly constructed
+                // CompositionEffectSourceParameter from each GetSource call makes the
+                // pre-enumeration flatten wrapper undiscoverable in VisitEffectInputs.
+                m_sources.push_back(CompositionEffectSourceParameter(sourceDefinition.name)
+                    .as<IGraphicsEffectSource>());
+            }
         }
 
         hstring Name() const
@@ -1201,10 +1444,9 @@ namespace
 
             try
             {
-                auto const& sourceDefinition = m_definition->sources[index];
-                auto parameter = CompositionEffectSourceParameter(sourceDefinition.name).as<IGraphicsEffectSource>();
-                *source = reinterpret_cast<ABI::Windows::Graphics::Effects::IGraphicsEffectSource*>(
-                    detach_abi(parameter));
+                void* abi{};
+                copy_to_abi(m_sources[index], abi);
+                *source = static_cast<ABI::Windows::Graphics::Effects::IGraphicsEffectSource*>(abi);
                 return S_OK;
             }
             catch (...)
@@ -1227,6 +1469,7 @@ namespace
     private:
         CustomEffectRuntime::CustomEffectDefinition const* m_definition{};
         hstring m_name;
+        std::vector<IGraphicsEffectSource> m_sources;
     };
 }
 

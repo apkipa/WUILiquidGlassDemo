@@ -2,6 +2,7 @@
 #include "CustomBlurEffect.h"
 #include "CustomInvertEffect.h"
 #include "CustomLiquidGlassEffect.h"
+#include "GaussianBlurEffect.h"
 #include "MainWindow.xaml.h"
 #if __has_include("MainWindow.g.cpp")
 #include "MainWindow.g.cpp"
@@ -80,6 +81,15 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
                 }
             });
         };
+        GaussianBlurRadiusSlider().ValueChanged([weak = get_weak()](
+            IInspectable const& sender,
+            Controls::Primitives::RangeBaseValueChangedEventArgs const& args)
+        {
+            if (auto self = weak.get())
+            {
+                self->OnGaussianBlurRadiusChanged(sender, args);
+            }
+        });
         hookLiquidGlassSlider(BlurRadiusSlider());
         hookLiquidGlassSlider(RefractionStrengthSlider());
         hookLiquidGlassSlider(CornerRadiusSlider());
@@ -191,6 +201,7 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
 
         auto const compositor = Media::CompositionTarget::GetCompositorForCurrentThread();
         m_backdropEffectBrush = nullptr;
+        m_gaussianBlurBrush = nullptr;
         switch (m_backdropEffect)
         {
         case BackdropEffectKind::Invert:
@@ -215,6 +226,17 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         }
         case BackdropEffectKind::LiquidGlass:
         {
+            auto blurAnimatableProperties = single_threaded_vector<hstring>();
+            blurAnimatableProperties.Append(GaussianBlurEffect::BlurAmountPropertyPath);
+            auto blurFactory = compositor.CreateEffectFactory(
+                GaussianBlurEffect::CreateEffect(
+                    L"Backdrop",
+                    static_cast<float>(GaussianBlurRadiusSlider().Value())),
+                blurAnimatableProperties);
+            auto blurBrush = blurFactory.CreateBrush();
+            blurBrush.SetSourceParameter(L"Backdrop", compositor.CreateBackdropBrush());
+            m_gaussianBlurBrush = blurBrush;
+
             auto animatableProperties = single_threaded_vector<hstring>();
             animatableProperties.Append(CustomLiquidGlassEffect::BlurRadiusPropertyPath);
             animatableProperties.Append(CustomLiquidGlassEffect::RefractionStrengthPropertyPath);
@@ -227,9 +249,10 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
                 CustomLiquidGlassEffect::CreateEffect(),
                 animatableProperties);
             auto brush = factory.CreateBrush();
-            brush.SetSourceParameter(L"Backdrop", compositor.CreateBackdropBrush());
+            brush.SetSourceParameter(L"Backdrop", blurBrush);
             m_backdropEffectBrush = brush;
             m_backdropBrushProtected.CompositionBrush(brush);
+            ApplyGaussianBlurProperties();
             ApplyLiquidGlassProperties();
             EffectCaption().Text(L"Liquid glass material");
             break;
@@ -271,6 +294,18 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         properties.InsertScalar(
             CustomLiquidGlassEffect::DispersionStrengthPropertyPath,
             static_cast<float>(DispersionStrengthSlider().Value()));
+    }
+
+    void MainWindow::ApplyGaussianBlurProperties()
+    {
+        if (m_backdropEffect != BackdropEffectKind::LiquidGlass || !m_gaussianBlurBrush)
+        {
+            return;
+        }
+
+        m_gaussianBlurBrush.Properties().InsertScalar(
+            GaussianBlurEffect::BlurAmountPropertyPath,
+            static_cast<float>(GaussianBlurRadiusSlider().Value()));
     }
 
     void MainWindow::UpdateLiquidGlassControlsState()
@@ -550,6 +585,13 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         Controls::Primitives::RangeBaseValueChangedEventArgs const&)
     {
         ApplyLiquidGlassProperties();
+    }
+
+    void MainWindow::OnGaussianBlurRadiusChanged(
+        IInspectable const&,
+        Controls::Primitives::RangeBaseValueChangedEventArgs const&)
+    {
+        ApplyGaussianBlurProperties();
     }
 
     void MainWindow::EndBackdropInteraction()

@@ -27,6 +27,7 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         winrt::Microsoft::UI::Xaml::Media::XamlCompositionBrushBase m_backdropXamlBrush{ nullptr };
         winrt::Microsoft::UI::Xaml::Media::IXamlCompositionBrushBaseProtected m_backdropBrushProtected{ nullptr };
         winrt::Microsoft::UI::Composition::CompositionEffectBrush m_backdropEffectBrush{ nullptr };
+        winrt::Microsoft::UI::Composition::CompositionEffectBrush m_gaussianBlurBrush{ nullptr };
         winrt::Microsoft::UI::Input::InputPointerSource m_pointerSource{ nullptr };
         winrt::Microsoft::UI::Input::InputCursor m_arrowCursor{ nullptr };
         winrt::Microsoft::UI::Input::InputCursor m_moveCursor{ nullptr };
@@ -45,6 +46,7 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         void InitializeBackdropBrush();
         void ApplyBackdropEffect();
         void ApplyLiquidGlassProperties();
+        void ApplyGaussianBlurProperties();
         void UpdateLiquidGlassControlsState();
         void ClampBackdropFrameRect();
         bool HitTestBackdropFrame(winrt::Windows::Foundation::Point const& position);
@@ -78,6 +80,9 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
             winrt::Windows::Foundation::IInspectable const& sender,
             winrt::Microsoft::UI::Xaml::Controls::Primitives::RangeBaseValueChangedEventArgs const& args);
         void OnLiquidGlassParameterChanged(
+            winrt::Windows::Foundation::IInspectable const& sender,
+            winrt::Microsoft::UI::Xaml::Controls::Primitives::RangeBaseValueChangedEventArgs const& args);
+        void OnGaussianBlurRadiusChanged(
             winrt::Windows::Foundation::IInspectable const& sender,
             winrt::Microsoft::UI::Xaml::Controls::Primitives::RangeBaseValueChangedEventArgs const& args);
         void EndBackdropInteraction();
