@@ -9,13 +9,17 @@
 #endif
 
 using namespace winrt;
+using namespace Windows::ApplicationModel::DataTransfer;
 using namespace Windows::Foundation;
+using namespace Windows::Storage;
+using namespace Windows::Storage::Pickers;
 using namespace Microsoft::UI::Composition;
 using namespace Microsoft::UI::Input;
 using namespace Microsoft::UI::Xaml;
 using namespace Microsoft::UI::Xaml::Input;
 using namespace Microsoft::UI::Xaml::Media::Animation;
 
+namespace Imaging = winrt::Microsoft::UI::Xaml::Media::Imaging;
 namespace Media = winrt::Microsoft::UI::Xaml::Media;
 
 namespace
@@ -28,6 +32,21 @@ namespace
     constexpr float kMinimumBackdropHeight = 80.0f;
     constexpr float kResizeGripSize = 32.0f;
 
+    bool IsSupportedImageFile(StorageFile const& file)
+    {
+        std::wstring extension{ file.FileType() };
+        std::transform(extension.begin(), extension.end(), extension.begin(), [](wchar_t value)
+        {
+            return static_cast<wchar_t>(std::towlower(value));
+        });
+
+        return extension == L".jpg" ||
+            extension == L".jpeg" ||
+            extension == L".png" ||
+            extension == L".bmp" ||
+            extension == L".gif" ||
+            extension == L".webp";
+    }
 }
 
 // To learn more about WinUI, the WinUI project structure,
@@ -51,6 +70,42 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         InitializeBackdropBrush();
         ApplyBackdropEffect();
 
+        SetBackgroundImageButton().Click([weak = get_weak()](
+            IInspectable const& sender,
+            RoutedEventArgs const& args)
+        {
+            if (auto self = weak.get())
+            {
+                self->OnSetBackgroundImageClick(sender, args);
+            }
+        });
+        ClearBackgroundImageButton().Click([weak = get_weak()](
+            IInspectable const& sender,
+            RoutedEventArgs const& args)
+        {
+            if (auto self = weak.get())
+            {
+                self->OnClearBackgroundImageClick(sender, args);
+            }
+        });
+        Root().DragOver([weak = get_weak()](
+            IInspectable const& sender,
+            DragEventArgs const& args)
+        {
+            if (auto self = weak.get())
+            {
+                self->OnRootDragOver(sender, args);
+            }
+        });
+        Root().Drop([weak = get_weak()](
+            IInspectable const& sender,
+            DragEventArgs const& args)
+        {
+            if (auto self = weak.get())
+            {
+                self->OnRootDrop(sender, args);
+            }
+        });
         EffectSelector().SelectionChanged([weak = get_weak()](
             IInspectable const& sender,
             Controls::SelectionChangedEventArgs const& args)
@@ -129,6 +184,15 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
                 self->OnBackdropHostPointerMoved(sender, args);
             }
         });
+        BackdropFrame().PointerWheelChanged([weak = get_weak()](
+            IInspectable const& sender,
+            PointerRoutedEventArgs const& args)
+        {
+            if (auto self = weak.get())
+            {
+                self->OnBackdropFramePointerWheelChanged(sender, args);
+            }
+        });
         BackdropHost().PointerReleased([weak = get_weak()](
             IInspectable const& sender,
             PointerRoutedEventArgs const& args)
@@ -190,6 +254,88 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         m_backdropBrushProtected = m_backdropXamlBrush.as<Media::IXamlCompositionBrushBaseProtected>();
         m_backdropXamlBrush.FallbackColor(winrt::Windows::UI::Color{ 0x99, 0xff, 0xff, 0xff });
         BackdropFrame().Background(m_backdropXamlBrush.as<Media::Brush>());
+    }
+
+    fire_and_forget MainWindow::PickBackgroundImageAsync()
+    {
+        auto lifetime = get_strong();
+
+        try
+        {
+            FileOpenPicker picker;
+            picker.ViewMode(PickerViewMode::Thumbnail);
+            picker.SuggestedStartLocation(PickerLocationId::PicturesLibrary);
+            picker.FileTypeFilter().Append(L".jpg");
+            picker.FileTypeFilter().Append(L".jpeg");
+            picker.FileTypeFilter().Append(L".png");
+            picker.FileTypeFilter().Append(L".bmp");
+            picker.FileTypeFilter().Append(L".gif");
+            picker.FileTypeFilter().Append(L".webp");
+
+            auto const hwnd = GetWindowHandle();
+            if (hwnd)
+            {
+                check_hresult(picker.as<IInitializeWithWindow>()->Initialize(hwnd));
+            }
+
+            if (auto file = co_await picker.PickSingleFileAsync())
+            {
+                co_await SetBackgroundImageAsync(file);
+            }
+        }
+        catch (...)
+        {
+        }
+    }
+
+    fire_and_forget MainWindow::SetBackgroundImageFromDropAsync(DragEventArgs args)
+    {
+        auto lifetime = get_strong();
+        auto deferral = args.GetDeferral();
+
+        try
+        {
+            auto const items = co_await args.DataView().GetStorageItemsAsync();
+            for (auto const& item : items)
+            {
+                if (auto file = item.try_as<StorageFile>(); file && IsSupportedImageFile(file))
+                {
+                    co_await SetBackgroundImageAsync(file);
+                    break;
+                }
+            }
+        }
+        catch (...)
+        {
+        }
+
+        deferral.Complete();
+    }
+
+    IAsyncAction MainWindow::SetBackgroundImageAsync(StorageFile file)
+    {
+        try
+        {
+            if (!file || !IsSupportedImageFile(file))
+            {
+                co_return;
+            }
+
+            auto stream = co_await file.OpenReadAsync();
+            Imaging::BitmapImage image;
+            co_await image.SetSourceAsync(stream);
+            BackgroundImage().Source(image);
+            BackgroundImage().Visibility(Visibility::Visible);
+        }
+        catch (...)
+        {
+        }
+    }
+
+    void MainWindow::ClearBackgroundImage()
+    {
+        BackgroundImage().Source(nullptr);
+        BackgroundImage().Visibility(Visibility::Collapsed);
     }
 
     void MainWindow::ApplyBackdropEffect()
@@ -535,6 +681,64 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         args.Handled(true);
     }
 
+    void MainWindow::OnBackdropFramePointerWheelChanged(IInspectable const&, PointerRoutedEventArgs const& args)
+    {
+        auto const position = args.GetCurrentPoint(CenterContentScroller()).Position();
+        auto const isOverScroller =
+            position.X >= 0.0 &&
+            position.Y >= 0.0 &&
+            position.X <= CenterContentScroller().ActualWidth() &&
+            position.Y <= CenterContentScroller().ActualHeight();
+        if (!isOverScroller)
+        {
+            return;
+        }
+
+        auto const delta = args.GetCurrentPoint(BackdropFrame()).Properties().MouseWheelDelta();
+        auto const nextOffset = std::clamp(
+            CenterContentScroller().VerticalOffset() - static_cast<double>(delta) / 120.0 * 48.0,
+            0.0,
+            CenterContentScroller().ScrollableHeight());
+        CenterContentScroller().ChangeView(
+            nullptr,
+            box_value(nextOffset).as<Windows::Foundation::IReference<double>>(),
+            nullptr,
+            true);
+        args.Handled(true);
+    }
+
+    void MainWindow::OnSetBackgroundImageClick(IInspectable const&, RoutedEventArgs const&)
+    {
+        PickBackgroundImageAsync();
+    }
+
+    void MainWindow::OnClearBackgroundImageClick(IInspectable const&, RoutedEventArgs const&)
+    {
+        ClearBackgroundImage();
+    }
+
+    void MainWindow::OnRootDragOver(IInspectable const&, DragEventArgs const& args)
+    {
+        if (args.DataView().Contains(StandardDataFormats::StorageItems()))
+        {
+            args.AcceptedOperation(DataPackageOperation::Copy);
+            args.DragUIOverride().Caption(L"Set background image");
+            args.Handled(true);
+        }
+    }
+
+    void MainWindow::OnRootDrop(IInspectable const&, DragEventArgs const& args)
+    {
+        if (!args.DataView().Contains(StandardDataFormats::StorageItems()))
+        {
+            return;
+        }
+
+        args.AcceptedOperation(DataPackageOperation::Copy);
+        SetBackgroundImageFromDropAsync(args);
+        args.Handled(true);
+    }
+
     void MainWindow::OnBackdropHostPointerReleased(IInspectable const&, PointerRoutedEventArgs const& args)
     {
         if (m_backdropInteraction != BackdropInteraction::None)
@@ -625,5 +829,15 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
     {
         m_backdropInteraction = BackdropInteraction::None;
         m_activePointerId = 0;
+    }
+
+    HWND MainWindow::GetWindowHandle()
+    {
+        HWND hwnd{};
+        if (auto nativeWindow = this->try_as<IWindowNative>())
+        {
+            check_hresult(nativeWindow->get_WindowHandle(&hwnd));
+        }
+        return hwnd;
     }
 }

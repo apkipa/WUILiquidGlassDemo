@@ -9,7 +9,9 @@
     mc:Ignorable="d"
     Title="WUILiquidGlassDemo.WUI3">
 
-    <Grid x:Name="Root" Background="Transparent">
+    <Grid x:Name="Root"
+          Background="Transparent"
+          AllowDrop="True">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="240" />
             <ColumnDefinition Width="*" />
@@ -84,6 +86,11 @@
 
         <Grid Grid.ColumnSpan="2"
               Background="Transparent">
+            <Image x:Name="BackgroundImage"
+                   Stretch="UniformToFill"
+                   Visibility="Collapsed"
+                   IsHitTestVisible="False" />
+
             <Canvas IsHitTestVisible="False">
                 <Ellipse x:Name="RedOrb"
                          Width="170"
@@ -158,12 +165,16 @@
                           IsActive="True"
                           IsHitTestVisible="False" />
 
-            <Grid HorizontalAlignment="Center"
-                  VerticalAlignment="Center"
-                  Width="440"
-                  Height="220"
-                  Background="#CCFFFFFF">
-                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+            <ScrollViewer x:Name="CenterContentScroller"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center"
+                          Width="440"
+                          Height="220"
+                          Background="#CCFFFFFF"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="24"
+                            Spacing="10">
                     <TextBlock Text="WinUI 3 custom effect"
                                HorizontalAlignment="Center"
                                FontSize="28"
@@ -172,13 +183,40 @@
                                Text="Solid translucent brush"
                                HorizontalAlignment="Center"
                                FontSize="16" />
+                    <TextBlock Text="Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer mattis ligula vitae libero volutpat, sit amet tincidunt sapien pretium."
+                               TextWrapping="Wrap"
+                               Margin="0,16,0,0" />
+                    <TextBlock Text="Praesent euismod, erat at suscipit sagittis, augue justo suscipit lectus, vitae facilisis neque arcu vel augue. Sed commodo tellus in lorem porttitor, a mattis tortor dapibus."
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="Donec faucibus arcu at ipsum cursus, eget tempus mi gravida. Etiam vel ante ac lorem congue feugiat. Vivamus posuere urna vitae nulla facilisis, sed fermentum ipsum luctus."
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="Aliquam erat volutpat. Maecenas imperdiet ex vitae sem gravida, sed bibendum lorem placerat. Curabitur dignissim sem sed urna pulvinar, in tincidunt neque commodo."
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="Suspendisse potenti. Nunc laoreet sem vel ipsum pulvinar, vitae porta justo vestibulum. Pellentesque habitant morbi tristique senectus et netus et malesuada fames."
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae; Aenean ac metus in elit vestibulum blandit."
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="Morbi at neque sed justo efficitur consequat. Nam elementum metus eu justo blandit, vitae vulputate risus scelerisque. Nulla facilisi."
+                               TextWrapping="Wrap" />
                 </StackPanel>
-            </Grid>
+            </ScrollViewer>
+
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="8">
+                <StackPanel.RenderTransform>
+                    <TranslateTransform Y="138" />
+                </StackPanel.RenderTransform>
+                <Button x:Name="SetBackgroundImageButton"
+                        Content="Set background image" />
+                <Button x:Name="ClearBackgroundImageButton"
+                        Content="Clear background image" />
+            </StackPanel>
         </Grid>
 
         <Canvas x:Name="BackdropHost"
-                Grid.ColumnSpan="2"
-                Background="Transparent">
+                Grid.ColumnSpan="2">
             <Border x:Name="BackdropFrame"
                     Canvas.Left="268"
                     Canvas.Top="80"

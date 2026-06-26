@@ -46,6 +46,12 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         void StartDynamicScene();
         void InitializeBackdropBrush();
         void ApplyBackdropEffect();
+        winrt::fire_and_forget PickBackgroundImageAsync();
+        winrt::fire_and_forget SetBackgroundImageFromDropAsync(
+            winrt::Microsoft::UI::Xaml::DragEventArgs args);
+        winrt::Windows::Foundation::IAsyncAction SetBackgroundImageAsync(
+            winrt::Windows::Storage::StorageFile file);
+        void ClearBackgroundImage();
         void ApplyLiquidGlassProperties();
         void ApplyGaussianBlurProperties();
         void UpdateLiquidGlassControlsState();
@@ -62,6 +68,21 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         void OnBackdropHostPointerMoved(
             winrt::Windows::Foundation::IInspectable const& sender,
             winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
+        void OnBackdropFramePointerWheelChanged(
+            winrt::Windows::Foundation::IInspectable const& sender,
+            winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
+        void OnSetBackgroundImageClick(
+            winrt::Windows::Foundation::IInspectable const& sender,
+            winrt::Microsoft::UI::Xaml::RoutedEventArgs const& args);
+        void OnClearBackgroundImageClick(
+            winrt::Windows::Foundation::IInspectable const& sender,
+            winrt::Microsoft::UI::Xaml::RoutedEventArgs const& args);
+        void OnRootDragOver(
+            winrt::Windows::Foundation::IInspectable const& sender,
+            winrt::Microsoft::UI::Xaml::DragEventArgs const& args);
+        void OnRootDrop(
+            winrt::Windows::Foundation::IInspectable const& sender,
+            winrt::Microsoft::UI::Xaml::DragEventArgs const& args);
         void OnBackdropHostPointerReleased(
             winrt::Windows::Foundation::IInspectable const& sender,
             winrt::Microsoft::UI::Xaml::Input::PointerRoutedEventArgs const& args);
@@ -87,6 +108,7 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
             winrt::Windows::Foundation::IInspectable const& sender,
             winrt::Microsoft::UI::Xaml::Controls::Primitives::RangeBaseValueChangedEventArgs const& args);
         void EndBackdropInteraction();
+        HWND GetWindowHandle();
     };
 }
 
