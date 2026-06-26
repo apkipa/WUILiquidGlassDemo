@@ -1,156 +1,190 @@
 # WUILiquidGlassDemo
 
-这个仓库是一个基于 WinUI 2 (system XAML Islands) & C++/WinRT 的 Liquid Glass 风格材质实验项目。它的目标是搭一条完整的实时链路，把“实时背景输入 + 模糊预处理 + 玻璃材质 shader”串起来。
+这个仓库是一个 Liquid Glass 风格材质实验项目，目前包含两条实现路线：
+
+- **WinUI 2**：基于 system XAML Islands + C++/WinRT，自行捕获 backdrop、自行跑 D3D11 blur 和 glass shader，最后画进 composition surface。
+- **WinUI 3**：基于 WinUI 3 + composition brush，把自定义 shader 接入 `Compositor::CreateEffectFactory` 路径，重点实验 DWM / WUCEffectsI 的 custom effect 编译与 linking 行为。
 
 > [!WARNING]
 >
 > Vibe coded with GPT-5.4 High.
 
-当前实现可以概括为四个部分：
+## WinUI 2
 
-- 实时 backdrop 捕获
-- 基于 rAF 风格的按需调度
-- 独立的 blur 预处理 pass
-- 最终的玻璃材质 pass
+WinUI 2 版本是最直接、最可控的实现。它把玻璃看成一层“光学透射表面”，整条链路由 app 自己驱动：
 
-## 核心思想
+```text
+实时背景 -> 可选 blur 预处理 -> 折射 / 色散采样 -> 高光 / 边框叠加 -> composition surface
+```
 
-这个项目最核心的设计选择，是把玻璃看成一层“光学透射表面”，并围绕这层表面组织整条渲染链路。
+### 核心链路
 
-落到实现上，含义是：
-
-1. 实时捕获玻璃后面的内容。
+1. 捕获玻璃后面的实时内容。
 2. 把捕获到的 frame 转成 D3D11 纹理。
-3. 在需要时先对这张纹理做独立的高斯模糊预处理。
-4. CPU 侧只选择一张最终透射纹理传给 glass shader。
-5. 在 glass shader 里根据圆角矩形几何去计算折射、色散、高光、边框和遮罩。
+3. 在需要时对这张纹理执行独立的高斯模糊预处理。
+4. CPU 侧选择最终 transmission texture。
+5. glass shader 根据圆角矩形几何计算折射、色散、高光、边框和遮罩。
+6. 输出写入 `CompositionDrawingSurface`，再通过 `CompositionSurfaceBrush` 显示。
 
-所以当前的链路是偏串行的：
+### 代码结构
 
-`实时背景 -> 可选 blur 预处理 -> 折射 / 色散采样 -> 高光 / 边框叠加`
-
-## 代码结构
-
-- [BackdropImageGenerator.h](./WinUI2/BackdropImageGenerator.h) / [BackdropImageGenerator.cpp](./WinUI2/BackdropImageGenerator.cpp)
+- [WinUI2/BackdropImageGenerator.h](./WinUI2/BackdropImageGenerator.h) / [WinUI2/BackdropImageGenerator.cpp](./WinUI2/BackdropImageGenerator.cpp)  
   负责捕获 live backdrop，输出 `Direct3D11CaptureFrame`，并通过 `LastFrame` 暴露最新 frame。
-- [AnimationFrameScheduler.h](./WinUI2/AnimationFrameScheduler.h) / [AnimationFrameScheduler.cpp](./WinUI2/AnimationFrameScheduler.cpp)
+
+- [WinUI2/AnimationFrameScheduler.h](./WinUI2/AnimationFrameScheduler.h) / [WinUI2/AnimationFrameScheduler.cpp](./WinUI2/AnimationFrameScheduler.cpp)  
   提供类似 requestAnimationFrame 的调度能力，用来合并多次重绘请求。
-- [MainPage.xaml](./WinUI2/MainPage.xaml)
+
+- [WinUI2/MainPage.xaml](./WinUI2/MainPage.xaml)  
   承载演示 UI、参数 slider，以及自定义渲染用的 composition 宿主。
-- [MainPage.h](./WinUI2/MainPage.h) / [MainPage.cpp](./WinUI2/MainPage.cpp)
+
+- [WinUI2/MainPage.h](./WinUI2/MainPage.h) / [WinUI2/MainPage.cpp](./WinUI2/MainPage.cpp)  
   持有 D3D11 资源、blur pass、composition surface，以及最终玻璃材质 shader。
-## 全链路说明
 
-### 1. 实时背景捕获
+### 实现要点
 
-`BackdropImageGenerator` 接收一个 `Visual`，持续产出 `Direct3D11CaptureFrame`。
-
-这个 demo 采用按需触发的重绘模型，触发来源主要有三类：
-
-- backdrop frame 更新
-- 渲染宿主尺寸变化
-- slider 参数变化
-
-这样做的好处是，渲染时机和 UI 变化一致，不会无意义地持续空转。
+`BackdropImageGenerator` 接收一个 `Visual`，持续产出 `Direct3D11CaptureFrame`。Demo 使用按需触发的重绘模型，主要 invalidation 来源是 backdrop frame 更新、渲染宿主尺寸变化和 slider 参数变化。
 
 > [!WARNING]
 >
-> 由于 `Windows.Graphics.Capture` 的内在限制，无法正确捕获透明的 Visual 或元素的 handoff visual。必须为目标元素设置实心背景和 Visual 中转。
+> 由于 `Windows.Graphics.Capture` 的限制，无法正确捕获透明的 Visual 或元素的 handoff visual。需要为目标元素设置实心背景和 Visual 中转。
 
-### 2. rAF 风格调度
+blur 预处理是独立的两段 separable Gaussian blur：
 
-`AnimationFrameScheduler` 用来把多次 invalidation 合并成一次待执行的 render request。
+```text
+horizontal blur pass -> vertical blur pass
+```
 
-它的作用是避免重复注册和重复绘制，让整个链路和 UI rendering cadence 对齐。
+blur 强度为 0 时直接使用原始 frame；blur 开启时，最终 glass pass 采样预处理后的 blurred frame。
 
-### 3. 最终输出载体
-
-`MainPage` 会创建一个 `CompositionDrawingSurface`，然后使用 D3D11 往这张 surface 里画内容。
-
-这张 surface 再通过 `CompositionSurfaceBrush` 挂到 `SpriteVisual` 上显示。这样一来，最终效果仍然保持 composition layer 的集成方式，同时底层材质逻辑保持完全自定义。
-
-### 4. Blur 预处理
-
-当前实现会先执行一个独立的两段 separable Gaussian blur：
-
-- 横向 blur pass
-- 纵向 blur pass
-
-blur 完成后得到一张预处理过的透射纹理。
-
-当 blur 强度等于 0 时，则直接使用原始 frame 作为透射输入。
-
-### 5. 最终玻璃材质 pass
-
-最终 shader 只接收一张透射纹理：
-
-- blur 关闭时，是原始 frame
-- blur 开启时，是预处理后的 blurred frame
-
-然后在这个 pass 里完成下面这些工作：
+最终 shader 完成这些材质项：
 
 - rounded-rect 遮罩
-- 场函数计算
 - 折射偏移
 - 色散采样
 - 内部提白
 - 边框增强
-- 内 glow 与高光叠加
+- inner glow 与高光叠加
 
-这一步才是真正让结果更像玻璃的关键。
+rounded rect 在这里不只是 clip mask。它同时驱动折射衰减、色散衰减、边框强调和高光强度。实现上刻意把两类场分开：
 
-## 算子顺序
+- 基于真实 SDF 的边缘距离场，用于 edge-local 项。
+- 单独构造的 rounded interior field，用于 refraction / dispersion 的中心衰减。
 
-当前实现的算子顺序是明确固定的：
+这样做是为了保住边缘项语义，同时避免 SDF medial axis 附近的中心断层。
 
-1. 获取最新 live frame
-2. 在需要时执行 Gaussian blur 预处理
-3. 选择最终 transmission texture
-4. 在采样阶段施加 refraction 和 dispersion
-5. 叠加高光、glow、边框等表面响应
-6. 最后应用 rounded-rect alpha mask
+### WinUI 2 的特点
 
-可以简写成：
+- 优点：链路完全可控，shader 输入、intermediate texture、blur 尺寸和采样坐标都由 app 管理。
+- 缺点：需要自己捕获和调度 backdrop，需要维护 D3D11 surface 生命周期，和系统 composition effect 管线结合较浅。
 
-`F -> optional Blur(F) -> sample with refraction and dispersion -> add surface lighting terms -> mask`
+## WinUI 3
 
-## 几何场与材质场
+> [!WARNING]
+>
+> WinUI 3 部分包含大量逆向和 hook 实验，属于研究代码，不是稳定 API 用法。基于 WinAppSDK v2.2.0 x64 测试。
 
-rounded rect 在这里不只是一个 clip mask。
+WinUI 3 版本不是 WinUI 2 的简单移植。得益于 WinUI 3 的 Lifted Compositor 架构，此版本可以用于验证基于 hook 的自定义 effect shader 路线：**尽量不在 app 侧自绘 intermediate surface，而是把自定义 effect 伪装成 composition 可接受的 effect graph，并让 DWM/WUCEffectsI 编译和执行它。**
 
-它同时驱动：
+当前 UI 使用 XAML `Border.Background` 挂载自定义 `XamlCompositionBrushBase`，再把 `CompositionBrush` 设置为普通 solid / gradient / blur / invert / liquid glass effect brush。演示面板、动态 XAML 元素、背景图片和可拖拽 resize 的 glass rect 都用于观察 backdrop sampling 行为。
 
-- 折射衰减
-- 色散衰减
-- 边框强调
-- 高光强度
+### 和 WinUI 2 的关键差异
 
-这里有一个实现上的关键点：真正的 rounded-rect SDF 内部深度并不适合直接拿来驱动所有材质项。因为在 medial axis 附近，它天然会形成偏轴对齐的 plateau，如果把它当成大范围中心衰减场，就容易出现可见断层。
+WinUI 2：
 
-所以当前 shader 有意把两类场分开：
+```text
+app capture -> app blur -> app glass shader -> app-owned CompositionDrawingSurface
+```
 
-- 基于真实 SDF 的边缘距离场，用于 edge-local 的项
-- 单独构造的 rounded interior field，用于 refraction / dispersion 的中心衰减
+WinUI 3：
 
-这样分离的目的，是为了同时满足两件事：
+```text
+CompositionBackdropBrush / effect source -> WUCEffectsI graph traversal -> DWM shader linking -> CompositionEffectBrush
+```
 
-- 保住边缘项的原始语义
-- 避免中心断层和参数回归
+也就是说，WinUI 3 的目标不是“自己画完一张 texture 再交给 XAML”，而是让 `Compositor::CreateEffectFactory` 接受一个自定义 effect description，并把 shader body 编进 composition effect pipeline。
 
-## 当前实现方向
+### Composition hook
 
-当前代码大体遵循下面这些原则：
+WinUI 3 的核心实验代码在：
 
-- 用 live backdrop 作为输入
-- blur 作为预处理子系统存在
-- 最终 glass pass 只吃一张 transmission texture
-- 折射和高光由几何驱动
-- 色散只作为受控的边缘光学项存在
+- [WinUI3/CustomEffectRuntime.h](./WinUI3/CustomEffectRuntime.h)
+- [WinUI3/CustomEffectRuntime.cpp](./WinUI3/CustomEffectRuntime.cpp)
 
-它当前仍然是一个 demo，重点在于把关键链路搭清楚；但现在的架构已经允许继续沿着这条光学链路细化，而不需要推倒整个工程重写。
+它做的事情包括：
 
-## 运行说明
+- 注册自定义 effect 定义，包括 effect GUID、source、property、constant buffer、shader body 和 shader linking 参数。
+- 提供可传给 `CreateEffectFactory` 的 `IGraphicsEffect` / `IGraphicsEffectSource` 对象。
+- 在运行时参与或绕过 WUCEffectsI / DWM 对 effect type、compiled effect、subgraph、constant buffer 和 shader linking body 的常规假设。
+- 让自定义 shader 能以 DWM custom sampler 的形态拿到 `uv`、`samplerDataExt` 和 `samplerData`。
 
-- 项目使用 WinUI composition + 自定义 D3D11 render path。
-- overlay 画进 `CompositionDrawingSurface`，再通过 composition visual 显示。
-- slider 会实时驱动材质参数更新。
+这里的“hook”不是为了把自定义逻辑绕回 app 自绘路径，而是为了让 WinUI 3 的 `CompositionEffectBrush` 继续走系统 composition brush 路径，同时让未公开的 custom effect 形状被接受。
+
+### WinUI 3 effect 文件
+
+- [WinUI3/CustomInvertEffect.cpp](./WinUI3/CustomInvertEffect.cpp)  
+  最小自定义 effect 例子，用于验证自定义 shader 是否确实被执行。
+
+- [WinUI3/CustomBlurEffect.cpp](./WinUI3/CustomBlurEffect.cpp)  
+  丐版 blur 实验，用于验证 custom shader 采样、尺寸和 sampler data 行为。
+
+- [WinUI3/GaussianBlurEffect.cpp](./WinUI3/GaussianBlurEffect.cpp)  
+  构造系统 GaussianBlur effect description，用于和自定义 effect 串联。
+
+- [WinUI3/CustomLiquidGlassEffect.cpp](./WinUI3/CustomLiquidGlassEffect.cpp)  
+  将 WinUI 2 的 glass material 移植到 DWM custom sampler 模型。它不再依赖 app 自己传入宽高，而是使用 DWM 提供的 `samplerData` / `samplerDataExt` 和 shader derivative 推导材质坐标。
+
+- [WinUI3/MainWindow.xaml](./WinUI3/MainWindow.xaml) / [WinUI3/MainWindow.xaml.cpp](./WinUI3/MainWindow.xaml.cpp)  
+  演示 UI。支持切换 solid / gradient / blur / invert / liquid glass brush，调整 liquid glass 参数，拖拽 resize glass rect，设置或拖入背景图片。
+
+### Liquid Glass 在 WinUI 3 中的状态
+
+当前 WinUI 3 liquid glass 路线已经能够：
+
+- 通过 `CompositionEffectBrush` 显示自定义 glass shader。
+- 串接一个系统 GaussianBlur brush 作为上游 backdrop source。
+- 使用 animatable properties 控制 blur radius、refraction、corner radius、border thickness、highlight 和 dispersion。
+- 通过 `samplerData` 保持对 DWM effective content rect 的感知，减少上游 blur padding 导致的坐标漂移。
+
+但它仍然不是 WinUI 2 路线的等价替代：
+
+- DWM/WUCEffectsI 的 effect graph 有复杂度和形状限制。
+- `CompositionEffectBrush` 的 shader body 不是普通 full-screen pixel shader；可用输入取决于 DWM shader linking ABI。
+- 自定义坐标系、intermediate texture 尺寸、GaussianBlur 的 downsample/padding 行为都不能完全由 app 控制。
+- 当前 shader 内部 blur 仍是 placeholder，代码里保留了 TODO：后续应实现真正的 Dual Kawase blur 或其它稳定多 pass blur，而不是复用 DWM GaussianBlur 的已缩放 intermediate。
+
+### 为什么 WinUI 3 更复杂
+
+WinUI 2 的 shader 拿到的是 app 明确准备好的 texture 和 rect。WinUI 3 的 shader 运行在 composition effect graph 里，输入是 DWM 链接出来的 sampler body。很多看似普通的事情都会变成 graph/linking 问题：
+
+- 一个 effect 是否能被 `CreateEffectFactory` 接受。
+- graph 是否能 flatten 成 DWM 能消费的 subgraph。
+- shader body 使用的是颜色输入、custom sampler 输入，还是外部实现的 native graph。
+- 上游 blur 是否改变 effective content rect。
+- property metadata 和 constant buffer layout 是否匹配。
+
+因此 WinUI 3 代码里有较多“看起来不像正常 app 代码”的 hook 和 runtime metadata。它们是为了让自定义 effect 进入 composition pipeline，而不是为了追求通用框架抽象。
+
+## 构建
+
+解决方案入口：
+
+```powershell
+WUILiquidGlassDemo.sln
+```
+
+WinUI 3 构建示例：
+
+```powershell
+& 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe' `
+  'WUILiquidGlassDemo.sln' `
+  /t:WUILiquidGlassDemo_WUI3 `
+  /p:Configuration=Debug `
+  /p:Platform=x64 `
+  /m
+```
+
+## 当前方向
+
+- WinUI 2 继续作为可控的 reference implementation。
+- WinUI 3 继续探索 composition hook、自定义 effect graph、custom sampler、property metadata 和 DWM shader linking 行为。
+- liquid glass 目标保持一致：实时背景、稳定 blur、折射/色散、高光/边框和 rounded-rect material mask。
