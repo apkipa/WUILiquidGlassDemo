@@ -170,6 +170,10 @@ float RoundedRectSdf(float2 p, float2 halfSize, float radius)
 
 float4 SampleTransmission(float2 uv, float2 texelSize, float blurRadius)
 {
+    // TODO: Replace this local placeholder with a real Dual Kawase blur pipeline.
+    // DWM GaussianBlur is not a drop-in internal blur source here because its
+    // external graph downsamples/pads intermediates; LiquidGlass needs stable
+    // source UV/size semantics for shape, refraction, and border calculations.
     float2 stepSize = texelSize * max(blurRadius, 0.0f);
     float4 color = texture0.Sample(sampler0, uv) * 0.52f;
     color += texture0.Sample(sampler0, uv + float2( stepSize.x, 0.0f)) * 0.12f;
@@ -206,6 +210,12 @@ float4 LiquidGlassCore(float2 uv, float4 samplerDataExt, float4 samplerData)
     // blur outward as radius grows. Letting coordinates go outside [0,1] keeps
     // the shape tied to DWM's effective content rect instead.
     const float2 localUv = hasContentRect ? ((uv - contentMin) / contentUvSize) : uv;
+/*return float4(uv.x, 0.0f, 0.0f, 1.0f);
+if (any(localUv < 0.0f.xx) || any(localUv > 1.0f.xx))
+{
+    return float4(1.0f, 0.0f, 0.0f, 1.0f); // Debug: visualize localUv
+}
+return texture0.Sample(sampler0, localUv);*/
 
     const float2 localUvPixelStep = max(abs(ddx(localUv)) + abs(ddy(localUv)), 1e-6f.xx);
     // samplerDataExt.xy is the physical source/intermediate size. GaussianBlur can

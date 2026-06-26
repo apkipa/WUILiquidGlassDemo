@@ -204,6 +204,25 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         m_gaussianBlurBrush = nullptr;
         switch (m_backdropEffect)
         {
+        case BackdropEffectKind::LinearGradient:
+        {
+            auto brush = compositor.CreateLinearGradientBrush();
+            brush.MappingMode(CompositionMappingMode::Relative);
+            brush.StartPoint(Windows::Foundation::Numerics::float2{ 0.0f, 0.0f });
+            brush.EndPoint(Windows::Foundation::Numerics::float2{ 1.0f, 1.0f });
+            brush.ColorStops().Append(compositor.CreateColorGradientStop(
+                0.0f,
+                winrt::Windows::UI::Color{ 0xff, 0xff, 0x5c, 0x7a }));
+            brush.ColorStops().Append(compositor.CreateColorGradientStop(
+                0.48f,
+                winrt::Windows::UI::Color{ 0xff, 0x26, 0xd0, 0xce }));
+            brush.ColorStops().Append(compositor.CreateColorGradientStop(
+                1.0f,
+                winrt::Windows::UI::Color{ 0xff, 0xff, 0xd1, 0x66 }));
+            m_backdropBrushProtected.CompositionBrush(brush);
+            EffectCaption().Text(L"Relative composition linear gradient");
+            break;
+        }
         case BackdropEffectKind::Invert:
         {
             auto factory = compositor.CreateEffectFactory(CustomInvertEffect::CreateEffect());
@@ -249,7 +268,11 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
                 CustomLiquidGlassEffect::CreateEffect(),
                 animatableProperties);
             auto brush = factory.CreateBrush();
+#if 1
             brush.SetSourceParameter(L"Backdrop", blurBrush);
+#else
+            brush.SetSourceParameter(L"Backdrop", compositor.CreateBackdropBrush());
+#endif
             m_backdropEffectBrush = brush;
             m_backdropBrushProtected.CompositionBrush(brush);
             ApplyGaussianBlurProperties();
@@ -554,13 +577,17 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         auto const selectedIndex = EffectSelector().SelectedIndex();
         if (selectedIndex == 1)
         {
-            m_backdropEffect = BackdropEffectKind::Blur;
+            m_backdropEffect = BackdropEffectKind::LinearGradient;
         }
         else if (selectedIndex == 2)
         {
-            m_backdropEffect = BackdropEffectKind::Invert;
+            m_backdropEffect = BackdropEffectKind::Blur;
         }
         else if (selectedIndex == 3)
+        {
+            m_backdropEffect = BackdropEffectKind::Invert;
+        }
+        else if (selectedIndex == 4)
         {
             m_backdropEffect = BackdropEffectKind::LiquidGlass;
         }

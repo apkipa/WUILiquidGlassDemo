@@ -199,6 +199,7 @@
                           SelectedIndex="0"
                           HorizontalAlignment="Stretch">
                     <ComboBoxItem Content="Solid" />
+                    <ComboBoxItem Content="Linear Gradient" />
                     <ComboBoxItem Content="Blur" />
                     <ComboBoxItem Content="Invert" />
                     <ComboBoxItem Content="Liquid Glass" />

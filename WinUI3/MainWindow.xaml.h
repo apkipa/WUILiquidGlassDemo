@@ -19,6 +19,7 @@ namespace winrt::WUILiquidGlassDemo_WUI3::implementation
         enum class BackdropEffectKind
         {
             Solid,
+            LinearGradient,
             Blur,
             Invert,
             LiquidGlass,
